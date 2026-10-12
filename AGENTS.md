@@ -155,6 +155,18 @@ d'elles est violée, préviens-moi immédiatement.
   démarrage, sans rien perdre.
 - Demande-moi de tenir cette liste à jour.
 
+## Design
+- Style « Coton » (doux, aéré, pastel), issu de Claude Design et appliqué le
+  13/10/2026 : barre d'onglets en bas, fenêtres qui montent du bas de l'écran,
+  cartes de bobine teintées à la couleur du filament, message bref en haut.
+- Toute l'apparence passe par `public/style.css` et ses variables (couleurs,
+  arrondis, police) : un nouvel écran réutilise les classes existantes, sans
+  style écrit à part. Thèmes clair et sombre selon le réglage du téléphone.
+- Police Urbanist et icônes livrées avec l'application : rien n'est chargé
+  depuis un autre site.
+- Le dossier `design/` (planche des écrans, brief) reste sur mon Mac et n'est
+  pas dans le dépôt.
+
 ## Où on en est
 - Fait : application en ligne sur `https://3d-print-dashboard.jennblngr.com`
   (HTTPS vérifié le 12/10/2026) ; corrections de sécurité testées sur mon Mac.
@@ -170,4 +182,5 @@ d'elles est violée, préviens-moi immédiatement.
      lien d'invitation ouvert par un proche, restauration d'une sauvegarde
      sur le VPS ;
   2. copie des sauvegardes hors du VPS (choix à faire) ;
-  3. amélioration du design.
+  3. nouveau design appliqué sur mon Mac le 13/10/2026 : à tester, puis à
+     mettre en ligne.
