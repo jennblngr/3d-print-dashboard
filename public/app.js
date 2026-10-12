@@ -217,7 +217,8 @@ function renderAdmin() {
     <nav>${Object.keys(views).map(k =>
       `<button data-act="tab" data-id="${k}" class="${k === tab ? 'on' : ''}">${t(k)}${k === 'wishes' && pending ? ` <b class="badge">${pending}</b>` : ''}</button>`
     ).join('')}</nav>
-    <main>${views[tab]()}</main>`;
+    <main>${views[tab]()}</main>
+    <footer>${state.last_backup ? t('lastBackup', { date: new Date(state.last_backup).toLocaleString(lang) }) : t('noBackup')}</footer>`;
 }
 
 function spoolCard(s) {

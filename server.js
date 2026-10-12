@@ -1,26 +1,64 @@
 import http from 'node:http';
-import { readFileSync, mkdirSync } from 'node:fs';
-import { randomBytes, timingSafeEqual, createHash } from 'node:crypto';
+import { readFileSync, mkdirSync, existsSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { parseHash, verifyPassword } from './auth.js';
+import { createBackup, pruneBackups, lastBackupAt } from './backup.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = +process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
-const SECURE_COOKIES = process.env.SECURE_COOKIES === 'true';
-const SESSION_MS = 30 * 24 * 3600 * 1000;
 
-if (ADMIN_PASSWORD.length < 8) {
-  console.error('Set ADMIN_PASSWORD (at least 8 characters) before starting.');
+// Local runs read .env themselves; in Docker the values come from the container environment.
+try {
+  process.loadEnvFile(path.join(__dirname, '.env'));
+} catch {}
+
+const ADMIN_PASSWORD_HASH = process.env.ADMIN_PASSWORD_HASH || '';
+const SECURE_COOKIES = process.env.SECURE_COOKIES === 'true';
+// Only believe X-Forwarded-For when a reverse proxy we control sets it.
+const TRUST_PROXY = process.env.TRUST_PROXY === 'true';
+const SESSION_MS = 30 * 24 * 3600 * 1000;
+const MAX_REQUESTS_PER_MINUTE = +process.env.MAX_REQUESTS_PER_MINUTE || 300;
+const MAX_WRITES_PER_MINUTE = +process.env.MAX_WRITES_PER_MINUTE || 60;
+
+if (!parseHash(ADMIN_PASSWORD_HASH)) {
+  console.error('No valid owner password is configured. Run "npm run set-password" first.');
   process.exit(1);
 }
 
 // ---------- database ----------
 
 mkdirSync(DATA_DIR, { recursive: true });
-const db = new DatabaseSync(path.join(DATA_DIR, 'app.db'));
+const DB_FILE = path.join(DATA_DIR, 'app.db');
+const hadData = existsSync(DB_FILE);
+const db = new DatabaseSync(DB_FILE);
+
+function backup(reason) {
+  const file = createBackup(db, DATA_DIR);
+  pruneBackups(DATA_DIR);
+  console.log(`Backup saved (${reason}): ${path.basename(file)}`);
+}
+// Taken before the schema changes below, so an upgrade can always be undone.
+// Refusing to start without it is deliberate: better a stopped app than unprotected data.
+if (hadData) {
+  try {
+    backup('startup');
+  } catch (e) {
+    console.error(`Could not back up the database, not starting: ${e.message}`);
+    process.exit(1);
+  }
+}
+setInterval(() => {
+  try {
+    backup('daily');
+  } catch (e) {
+    console.error(`BACKUP FAILED: ${e.message}`);
+  }
+}, 24 * 3600 * 1000).unref();
+
 db.exec(`
   PRAGMA journal_mode = WAL;
   PRAGMA foreign_keys = ON;
@@ -152,7 +190,6 @@ function num(v, min, max, name) {
 const int = (v, min, max, name) => Math.round(num(v, min, max, name));
 const day = v => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : new Date().toISOString().slice(0, 10));
 const newToken = () => randomBytes(24).toString('base64url');
-const sha = s => createHash('sha256').update(s).digest();
 
 function cookies(req) {
   const out = {};
@@ -177,12 +214,30 @@ function sessionCookie(value, maxAgeSec) {
   return `sid=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAgeSec}${SECURE_COOKIES ? '; Secure' : ''}`;
 }
 
-// Failed-login limiter, per client address.
-const failures = new Map();
 function clientKey(req) {
-  const fwd = req.headers['x-forwarded-for'];
+  const fwd = TRUST_PROXY && req.headers['x-forwarded-for'];
   return (typeof fwd === 'string' && fwd.split(',').pop().trim()) || req.socket.remoteAddress || '?';
 }
+
+// Request limiters, per client address: one for everything, a stricter one for changes.
+function limiter(maxPerMinute) {
+  const windows = new Map();
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, w] of windows) if (w.reset < now) windows.delete(key);
+  }, 60_000).unref();
+  return key => {
+    const now = Date.now();
+    let w = windows.get(key);
+    if (!w || w.reset < now) windows.set(key, (w = { count: 0, reset: now + 60_000 }));
+    return ++w.count > maxPerMinute;
+  };
+}
+const tooManyRequests = limiter(MAX_REQUESTS_PER_MINUTE);
+const tooManyWrites = limiter(MAX_WRITES_PER_MINUTE);
+
+// Failed-login limiter, per client address.
+const failures = new Map();
 function loginBlocked(key) {
   const f = failures.get(key);
   if (f && f.until < Date.now()) failures.delete(key);
@@ -262,10 +317,11 @@ function route(method, pattern, role, fn) {
   routes.push({ method, re, role, fn });
 }
 
-route('POST', '/api/login', 'public', ({ req, res, body }) => {
+route('POST', '/api/login', 'public', async ({ req, res, body }) => {
   const key = clientKey(req);
   if (loginBlocked(key)) throw new HttpError(429, 'Too many attempts, try again later');
-  if (!timingSafeEqual(sha(String(body.password ?? '')), sha(ADMIN_PASSWORD))) {
+  const password = typeof body.password === 'string' ? body.password.slice(0, 1000) : '';
+  if (!(await verifyPassword(password, ADMIN_PASSWORD_HASH))) {
     loginFailed(key);
     throw new HttpError(401, 'Wrong password');
   }
@@ -284,6 +340,7 @@ route('POST', '/api/logout', 'public', ({ req, res }) => {
 });
 
 route('GET', '/api/state', 'admin', () => ({
+  last_backup: lastBackupAt(DATA_DIR),
   spools: db.prepare('SELECT * FROM spools ORDER BY archived, brand COLLATE NOCASE, material, variant, color_name').all(),
   products: db.prepare('SELECT * FROM products').all(),
   people: db.prepare(`SELECT pe.id, pe.name, pe.token, ${BALANCE_SQL} AS balance_cents FROM people pe ORDER BY pe.name COLLATE NOCASE`).all(),
@@ -487,6 +544,13 @@ async function handle(req, res) {
   res.setHeader('X-Frame-Options', 'DENY');
   res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; media-src 'self' blob:");
 
+  const client = clientKey(req);
+  const isWrite = req.method !== 'GET' && req.method !== 'HEAD';
+  if (tooManyRequests(client) || (isWrite && tooManyWrites(client))) {
+    res.setHeader('Retry-After', '60');
+    throw new HttpError(429, 'Too many requests, wait a minute and try again');
+  }
+
   if (p.startsWith('/api/')) {
     for (const r of routes) {
       const m = r.method === req.method && r.re.exec(p);
@@ -496,7 +560,7 @@ async function handle(req, res) {
       if (r.role === 'admin' && !isAdmin(req)) throw new HttpError(401, 'Not signed in');
       if (r.role === 'guest' && !(ctx.person = guestOf(req))) throw new HttpError(401, 'Invalid invite link');
       if (req.method !== 'GET') ctx.body = await readBody(req);
-      return send(res, 200, 'application/json', JSON.stringify(r.fn(ctx)));
+      return send(res, 200, 'application/json', JSON.stringify(await r.fn(ctx)));
     }
     throw new HttpError(404, 'Not found');
   }

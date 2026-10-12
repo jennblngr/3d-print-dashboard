@@ -86,6 +86,8 @@ const en = {
   wishNote: 'Colour, size, details (optional)',
   send: 'Send',
   badLink: 'This invite link is not valid any more. Ask for a new one.',
+  lastBackup: 'Last backup: {date}',
+  noBackup: 'No backup yet (the first one is made at the next restart).',
 };
 
 const fr = {
@@ -176,6 +178,8 @@ const fr = {
   wishNote: 'Couleur, taille, détails (facultatif)',
   send: 'Envoyer',
   badLink: "Ce lien d'invitation n'est plus valide. Demandez-en un nouveau.",
+  lastBackup: 'Dernière sauvegarde : {date}',
+  noBackup: 'Pas encore de sauvegarde (la première est faite au prochain redémarrage).',
 };
 
 export const lang = (navigator.language || 'en').toLowerCase().startsWith('fr') ? 'fr' : 'en';

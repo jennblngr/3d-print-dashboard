@@ -10,8 +10,8 @@ No dependencies: Node 24+ and its built-in SQLite. Data lives in one file, `data
 ## Run locally
 
 ```sh
-ADMIN_PASSWORD='a long passphrase' node server.js
-# http://localhost:3000
+npm run set-password   # asks for the owner password, stores only its hash in .env
+npm start              # http://localhost:3000
 ```
 
 ## Deploy on a VPS
@@ -19,14 +19,43 @@ ADMIN_PASSWORD='a long passphrase' node server.js
 Point a domain's DNS record at the VPS, install Docker, then:
 
 ```sh
-cp .env.example .env   # set ADMIN_PASSWORD and DOMAIN
+cp .env.example .env   # set DOMAIN
+# add the ADMIN_PASSWORD_HASH line: copy it from the .env made by "npm run set-password" on your own machine
 docker compose up -d --build
 ```
 
 Caddy serves the app over HTTPS, which the camera, NFC and "install app" features require.
 
-Backup: copy the `app.db*` files out of the `data` volume, for example
-`docker compose cp app:/data ./backup`.
+## Backups
+
+The app backs its database up by itself, into the `backups` folder of the data directory: at every start (before any
+upgrade of the data) and then once a day. Each backup is checked for integrity. The first and last backup of each of
+the last 14 days are kept. The owner's screen shows the date of the last one.
+
+These backups live on the same machine as the data. To survive the loss of the server, copy them elsewhere regularly:
+
+```sh
+docker compose cp app:/data/backups ./backups
+```
+
+To restore:
+
+```sh
+# locally: stop the app, then
+npm run restore                 # lists the backups
+npm run restore -- <name>       # puts one back; the replaced database is kept as before-restore-<date>.db
+
+# on the VPS
+docker compose stop app
+docker compose run --rm app node scripts/restore-backup.js <name>
+docker compose start app
+```
+
+## Security
+
+- The owner password is never stored: `.env` holds a salted scrypt hash, and 10 wrong attempts lock an address out for 15 minutes.
+- Every address is limited to 300 requests per minute, of which 60 changes.
+- Guests have no password. Their invite link is the key to their own data only, and the owner can replace it.
 
 ## How billing works
 
