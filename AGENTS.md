@@ -69,9 +69,9 @@ clé d'accès).
   (`jennblngr/3d-print-dashboard`), même si l'accès configuré le permet.
 
 Interdits, même si c'est techniquement possible :
-- modifier ou pousser toi-même les fichiers d'automatisation GitHub
-  (`.github/workflows/`) : prépare le changement dans un commit, c'est moi
-  qui le pousse ;
+- modifier les fichiers d'automatisation GitHub (`.github/workflows/`) sans
+  ma demande explicite, ou les pousser toi-même : tu prépares le changement
+  dans un commit, c'est moi qui le pousse ;
 - utiliser ma clé SSH, ou tout accès autre que celui prévu pour toi.
 Dans ces cas : explique-moi le risque en langage simple, propose, et attends
 que je valide.
