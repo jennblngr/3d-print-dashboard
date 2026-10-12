@@ -71,6 +71,20 @@ sudo docker compose start app
 - Every address is limited to 300 requests per minute, of which 60 changes.
 - Guests have no password. Their invite link is the key to their own data only, and the owner can replace it.
 
+## Android NFC companion
+
+`android/` holds a tiny Android app with no screen, for the owner's phone only. Holding a TigerTag chip against the
+phone starts it: it reads the chip memory (read-only, nothing is ever written to a chip) and opens the dashboard at
+`#tigertag=<bytes>`, which opens the matching spool or prefills a new one. Its icon simply opens the dashboard.
+
+```sh
+sh android/build.sh                                         # needs a JDK and the Android SDK, no Gradle
+adb install -r android/build/3d-print-dashboard-nfc.apk     # phone plugged in, USB debugging allowed
+```
+
+The build is signed with the standard Android debug key (`~/.android/debug.keystore`, created if missing and never
+committed). The dashboard address is set in `android/res/values/strings.xml`.
+
 ## How billing works
 
 A print line costs `grams × spool price ÷ spool net weight`, rounded to the cent and frozen when the print is recorded.
@@ -83,12 +97,10 @@ Recording a print takes the grams off the spool; deleting the print gives them b
   spools can share it. The app remembers what you saved for a barcode (brand, material, colour, weight, price) and
   prefills the next spool of that product; scanning also lists the spools you already own with that barcode.
   Nothing is looked up online.
-- **Standard NFC tags (NDEF):** uses Web NFC (Chrome on Android only). The tag's serial number is unique to one
-  spool, and scanning it opens that spool.
-- **TigerTag chips:** they are not NDEF, so no browser can read them. The app can decode their memory
+- **TigerTag chips:** they are not in the NDEF format, so no browser can read them. The app can decode their memory
   (`public/tigertag.js`, following the open [TigerTag specification](https://github.com/TigerTag-Project/TigerTag-RFID-Guide))
   when it is opened with the chip's bytes as hexadecimal text, from page 0, after `#tigertag=` in the URL. It then
   prefills brand, material, type, colour and weight, and identifies the spool by the chip's serial number. Reading
-  the chip and opening that URL is the job of an Android companion app, which does not exist yet.
+  the chip and opening that URL is the job of the Android companion app in `android/` (see below).
   Brand and material names come from the public TigerTag registry (CC0), bundled in `public/tigertag-db.js`;
   refresh it with `node scripts/make-tigertag-db.js <registry database folder>`.

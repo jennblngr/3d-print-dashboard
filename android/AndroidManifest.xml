@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- NFC companion of the 3D Print Dashboard web app. It has no screen of its own: it reads
+     TigerTag chips, which browsers cannot read, and hands their content to the web app. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.jennblngr.printdashboard.nfc">
+
+    <uses-permission android:name="android.permission.NFC" />
+    <uses-feature android:name="android.hardware.nfc" android:required="true" />
+
+    <application
+        android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name">
+
+        <activity
+            android:name=".TagActivity"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.NoDisplay">
+
+            <!-- Touching the icon simply opens the dashboard. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <!-- Holding a chip against the phone starts the app, even from the home screen. -->
+            <intent-filter>
+                <action android:name="android.nfc.action.TECH_DISCOVERED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.nfc.action.TECH_DISCOVERED"
+                android:resource="@xml/nfc_tech_filter" />
+        </activity>
+    </application>
+</manifest>

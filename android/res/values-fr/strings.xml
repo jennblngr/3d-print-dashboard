@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="not_tigertag">Ce tag NFC n\'est pas un TigerTag.</string>
+    <string name="read_failed">Lecture du tag impossible. Maintenez-le immobile contre le téléphone et réessayez.</string>
+    <string name="no_browser">Aucun navigateur trouvé pour ouvrir le dashboard.</string>
+</resources>

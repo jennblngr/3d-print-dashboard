@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">3D Prints NFC</string>
+    <!-- Address of the web app. The chip content is appended after "#tigertag=". -->
+    <string name="dashboard_url" translatable="false">https://3d-print-dashboard.jennblngr.com/</string>
+    <string name="not_tigertag">This NFC tag is not a TigerTag.</string>
+    <string name="read_failed">Could not read the tag. Hold it still against the phone and try again.</string>
+    <string name="no_browser">No browser found to open the dashboard.</string>
+</resources>

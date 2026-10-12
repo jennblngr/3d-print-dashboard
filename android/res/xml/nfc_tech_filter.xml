@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- TigerTag chips (NTAG21x) are reported as plain NFC-A tags, with no NDEF content. -->
+<resources>
+    <tech-list>
+        <tech>android.nfc.tech.NfcA</tech>
+    </tech-list>
+</resources>

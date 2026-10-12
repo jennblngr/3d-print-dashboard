@@ -20,7 +20,7 @@ const isLink = s => /^https?:\/\//i.test(s || '');
 
 let state = null;
 let tab = sessionStorage.getItem('tab') || 'spools';
-let cleanup = null; // stops the camera or NFC reader owned by the open dialog
+let cleanup = null; // stops the camera owned by the open dialog
 let lineRow = () => '';
 let scanPreset = {}; // what the last scanned barcode prefills in a new spool
 
@@ -174,7 +174,6 @@ const views = {
     const cards = state.spools.map(spoolCard);
     return `<div class="bar">
       <button class="primary" data-act="scan">${t('scanBarcode')}</button>
-      ${'NDEFReader' in window ? `<button data-act="nfc">${t('scanNfc')}</button>` : ''}
       <button data-act="spool">${t('add')}</button>
     </div>${cards.join('') || empty()}`;
   },
@@ -268,7 +267,7 @@ function spoolDialog(spool, preset = {}) {
 }
 
 // An RFID tag belongs to one spool: open it, or start a new spool carrying the tag.
-// `details` is what the tag itself says about the spool, when it could be decoded.
+// `details` is what the tag itself says about the spool.
 function handleTag(code, details = {}) {
   const found = state.spools.find(s => s.code === code);
   toast(t(found ? 'spoolFound' : details.brand || details.material ? 'tagRead' : 'spoolNew'));
@@ -346,25 +345,6 @@ async function scanDialog() {
     tick();
   } catch {
     if (!stopped) fallback('noCamera');
-  }
-}
-
-async function nfcDialog() {
-  openDialog(t('scanNfc'), `<p class="hint">${t('nfcHint')}</p>`);
-  const hint = $('.hint', dlg);
-  const ctrl = new AbortController();
-  cleanup = () => ctrl.abort();
-  try {
-    const reader = new NDEFReader();
-    reader.onreading = e => {
-      if (!e.serialNumber) return (hint.textContent = t('nfcUnreadable'));
-      closeDialog();
-      handleTag('nfc:' + e.serialNumber);
-    };
-    reader.onreadingerror = () => (hint.textContent = t('nfcUnreadable'));
-    await reader.scan({ signal: ctrl.signal });
-  } catch {
-    if (!ctrl.signal.aborted) hint.textContent = t('nfcDenied');
   }
 }
 
@@ -457,7 +437,6 @@ const actions = {
   spoolFromScan: () => spoolDialog(undefined, scanPreset),
   delSpool: id => remove(`/api/spools/${id}`),
   scan: scanDialog,
-  nfc: nfcDialog,
   print: () => printDialog(),
   delPrint: id => remove(`/api/prints/${id}`),
   addLine() {
