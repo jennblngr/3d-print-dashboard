@@ -119,7 +119,8 @@ d'elles est violée, préviens-moi immédiatement.
   embarquées (aucun service en ligne appelé). La lecture de la puce passera
   par une petite application Android « passerelle », installée sur mon
   téléphone uniquement, qui ouvre l'application web avec les données lues.
-  Ne jamais écrire sur un tag TigerTag.
+  Ne jamais écrire sur un tag TigerTag. Le dashboard n'a plus de bouton
+  « Scanner un tag RFID » : on approche simplement la bobine du téléphone.
 - Pas de recherche en ligne des codes-barres pour l'instant : l'application
   mémorise elle-même les produits déjà saisis.
 - Type de filament (silk, matte...) : champ libre, vide = normal.
@@ -130,13 +131,13 @@ d'elles est violée, préviens-moi immédiatement.
 ## Où on en est
 - Fait : application en ligne sur `https://3d-print-dashboard.jennblngr.com`
   (HTTPS vérifié le 12/10/2026) ; corrections de sécurité testées sur mon Mac.
-- Constaté sur mon téléphone : le scan RFID du navigateur ne lit pas les tags
-  TigerTag (voir la décision ci-dessus).
+- Fait : passerelle Android « 3D Prints NFC » (dossier `android/`) installée
+  sur mon Pixel et validée le 12/10/2026 sur deux bobines TigerTag
+  différentes. Elle se construit avec `sh android/build.sh` et s'installe par
+  câble avec `adb install -r`.
 - Prochaines étapes :
-  1. passerelle Android pour lire les tags TigerTag (demande d'installer Java
-     et l'outil de construction Android sur mon Mac : accord à me demander) ;
-  2. suite du test en conditions réelles : scan du code-barres à la caméra,
+  1. suite du test en conditions réelles : scan du code-barres à la caméra,
      lien d'invitation ouvert par un proche, restauration d'une sauvegarde
      sur le VPS ;
-  3. copie des sauvegardes hors du VPS (choix à faire) ;
-  4. amélioration du design.
+  2. copie des sauvegardes hors du VPS (choix à faire) ;
+  3. amélioration du design.
