@@ -133,6 +133,24 @@ d'elles est violée, préviens-moi immédiatement.
 - Pas de recherche en ligne des codes-barres pour l'instant : l'application
   mémorise elle-même les produits déjà saisis.
 - Type de filament (silk, matte...) : champ libre, vide = normal.
+- Relevé automatique des impressions Bambu Lab (imprimante A1, sans AMS) : le
+  serveur lit l'historique de mon compte Bambu toutes les 5 minutes et range
+  chaque impression terminée dans « À attribuer ». Rien n'est compté, ni
+  montant ni stock, tant que je ne l'ai pas attribuée moi-même.
+- Trois issues pour une impression relevée : facturée à une personne (même
+  calcul que la saisie manuelle), « stock seulement » (pour moi : le stock
+  baisse, personne n'est facturé), ou ignorée. Tout est annulable.
+- Une impression ratée n'est jamais facturée : elle diminue seulement le
+  stock, d'un poids estimé au prorata de la durée écoulée, que je peux
+  corriger.
+- L'historique Bambu antérieur à la connexion du compte n'est pas repris : je
+  le saisis à la main. Idem pour une impression lancée par carte SD.
+- La connexion à Bambu se fait par un code reçu par e-mail ; mon mot de passe
+  Bambu n'est jamais demandé. La clé d'accès obtenue reste sur le serveur
+  (donc aussi dans les sauvegardes) et ne part jamais vers un navigateur.
+- Bambu Lab est le seul service externe appelé, par un accès non officiel qui
+  peut cesser de fonctionner : la saisie manuelle doit toujours rester
+  possible. On ne fait que lire le compte, jamais commander l'imprimante.
 - Toute évolution de la base doit convertir les données existantes au
   démarrage, sans rien perdre.
 - Demande-moi de tenir cette liste à jour.
@@ -144,6 +162,9 @@ d'elles est violée, préviens-moi immédiatement.
   sur mon Pixel et validée le 12/10/2026 sur deux bobines TigerTag
   différentes. Elle se construit avec `sh android/build.sh` et s'installe par
   câble avec `adb install -r`.
+- Fait : relevé automatique des impressions Bambu Lab, testé sur mon Mac le
+  12/10/2026 avec mon vrai historique. Pas encore en ligne : après la mise en
+  ligne, connecter mon compte Bambu depuis l'onglet Impressions.
 - Prochaines étapes :
   1. suite du test en conditions réelles : scan du code-barres à la caméra,
      lien d'invitation ouvert par un proche, restauration d'une sauvegarde
