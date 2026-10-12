@@ -85,7 +85,6 @@ d'elles est violée, préviens-moi immédiatement.
 - Règle 7 : sauvegardes automatiques en place et restauration testée sur le Mac,
   mais pas encore sur le VPS ; aucune copie hors du serveur (si le VPS est
   perdu, les sauvegardes le sont aussi).
-- Règle 1 : prévue sur le VPS, pas encore vérifiée en conditions réelles.
 
 ## Conventions et décisions prises
 - Aucune dépendance et aucune étape de build : Node 24 et sa base SQLite
@@ -115,6 +114,12 @@ d'elles est violée, préviens-moi immédiatement.
 - Une impression ne se modifie pas : on la supprime et on la ressaisit.
 - Le code-barres désigne un produit (partagé par plusieurs bobines) ; le tag
   RFID désigne une seule bobine.
+- Tags TigerTag : un navigateur ne peut pas les lire (format brut, pas NDEF).
+  L'application sait décoder leur contenu, avec les tables publiques TigerTag
+  embarquées (aucun service en ligne appelé). La lecture de la puce passera
+  par une petite application Android « passerelle », installée sur mon
+  téléphone uniquement, qui ouvre l'application web avec les données lues.
+  Ne jamais écrire sur un tag TigerTag.
 - Pas de recherche en ligne des codes-barres pour l'instant : l'application
   mémorise elle-même les produits déjà saisis.
 - Type de filament (silk, matte...) : champ libre, vide = normal.
@@ -123,9 +128,15 @@ d'elles est violée, préviens-moi immédiatement.
 - Demande-moi de tenir cette liste à jour.
 
 ## Où on en est
-- Fait : application écrite, serveur testé, ouverte sur mon Mac.
-- Pas encore fait : scan caméra et RFID jamais essayés sur un vrai téléphone.
-- Prochaines étapes, dans l'ordre :
-  1. mise en ligne sur le VPS ;
-  2. test en conditions réelles ;
-  3. amélioration du design.
+- Fait : application en ligne sur `https://3d-print-dashboard.jennblngr.com`
+  (HTTPS vérifié le 12/10/2026) ; corrections de sécurité testées sur mon Mac.
+- Constaté sur mon téléphone : le scan RFID du navigateur ne lit pas les tags
+  TigerTag (voir la décision ci-dessus).
+- Prochaines étapes :
+  1. passerelle Android pour lire les tags TigerTag (demande d'installer Java
+     et l'outil de construction Android sur mon Mac : accord à me demander) ;
+  2. suite du test en conditions réelles : scan du code-barres à la caméra,
+     lien d'invitation ouvert par un proche, restauration d'une sauvegarde
+     sur le VPS ;
+  3. copie des sauvegardes hors du VPS (choix à faire) ;
+  4. amélioration du design.
