@@ -1,106 +1,245 @@
+/* "Coton" look: soft, airy, pastel. Light and dark follow the phone setting.
+   The page is styled through .app (set on #app); dialogs and the toast live outside it. */
+
+@font-face {
+  font-family: 'Urbanist';
+  font-style: normal;
+  font-weight: 300 800;
+  font-display: swap;
+  src: url('/fonts/urbanist.woff2') format('woff2');
+}
+
+/* ---------- 1. variables ---------- */
 :root {
-  --bg: #f3f4f6;
-  --card: #ffffff;
-  --text: #111827;
-  --muted: #6b7280;
-  --line: #e5e7eb;
-  --accent: #ea580c;
-  --danger: #b91c1c;
-  --ok: #15803d;
-  color-scheme: light dark;
+  color-scheme: light;
+  --bg: #F3F3F6;
+  --dot: #DADAE3;
+  --card: #FFFFFF;
+  --sunk: #F1F1F5;
+  --text: #141418;
+  --muted: #5E5E6A;
+  --line: #E3E3EA;
+  --edge: rgb(20 20 24 / 0.16);
+  --ink: #141418;
+  --on-ink: #FFFFFF;
+  --accent: #4447C9;
+  --due: #AE2257;
+  --ok: #1B7553;
+  --danger: #BA2339;
+  --lav: #E8E9FF;
+  --rose: #FCE7EF;
+  --mint: #DDF3E8;
+  --mist: #E2EDF2;
+  --seg: rgb(20 20 24 / 0.07);
+  --nav: #FFFFFF;
+  --scrim: rgb(20 20 40 / 0.42);
+  --shadow: rgb(20 20 40 / 0.12);
+  /* illustration pastels, the same in both themes */
+  --p-lav: #A6ABFF;
+  --p-rose: #F5B5CB;
+  --p-mist: #A9CBD8;
+  --r: 28px;
+  --r-field: 16px;
+  --font: 'Urbanist', ui-rounded, system-ui, sans-serif;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0b0f19;
-    --card: #1a2030;
-    --text: #f3f4f6;
-    --muted: #9ca3af;
-    --line: #2c3446;
-    --accent: #fb923c;
-    --danger: #f87171;
-    --ok: #4ade80;
+    color-scheme: dark;
+    --bg: #0F0F12; --dot: #1F1F26; --card: #1A1A1F; --sunk: #25252C; --text: #F2F2F5; --muted: #A5A5B1;
+    --line: #2E2E36; --edge: rgb(255 255 255 / 0.18); --ink: #F2F2F5; --on-ink: #0F0F12;
+    --accent: #ABADFF; --due: #FF8DB4; --ok: #6FDDB0; --danger: #FF8C9C;
+    --lav: #25254A; --rose: #3B1F2B; --mint: #173226; --mist: #1C2A31; --seg: rgb(255 255 255 / 0.08);
+    --nav: #1F1F25; --scrim: rgb(0 0 0 / 0.6); --shadow: rgb(0 0 0 / 0.55);
   }
 }
+[hidden] { display: none !important; }
 
-* { box-sizing: border-box; }
-body {
-  margin: 0;
-  font: 16px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  background: var(--bg);
-  color: var(--text);
-  padding-bottom: env(safe-area-inset-bottom);
-}
-#app { max-width: 640px; margin: 0 auto; }
-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 16px 8px; }
-h1 { font-size: 1.25rem; margin: 0; }
-h2 { font-size: 1rem; margin: 24px 0 8px; }
-main { padding: 8px 16px 32px; }
-footer { padding: 0 16px 24px; text-align: center; color: var(--muted); font-size: 0.8rem; }
-small { display: block; color: var(--muted); font-size: 0.8rem; }
-a { color: var(--accent); }
+/* ---------- 2. page ---------- */
+body { margin: 0; background: var(--bg); }
+#app { max-width: 640px; min-height: 100dvh; margin: 0 auto; }
+.app { font: 500 16px/1.4 var(--font); background-color: var(--bg); background-image: radial-gradient(var(--dot) 1px, transparent 1.4px); background-size: 18px 18px; color: var(--text); padding-bottom: calc(108px + env(safe-area-inset-bottom)); -webkit-font-smoothing: antialiased; }
+.app.guest { padding-bottom: 24px; }
+.app header { padding: 22px 20px 0; }
+.app header .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.app .appname { display: flex; align-items: center; gap: 12px; margin: 0; font-size: 15px; font-weight: 600; color: var(--muted); }
+.app h1 { margin: 20px 0 4px; font-size: 44px; font-weight: 300; line-height: 1; letter-spacing: -0.025em; }
+.app h2 { margin: 32px 4px 12px; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
+.app main { padding: 8px 16px 24px; }
+.app footer { padding: 0 16px 24px; text-align: center; color: var(--muted); font-size: 13px; }
 
-nav { display: flex; gap: 4px; padding: 4px 16px; overflow-x: auto; position: sticky; top: 0; background: var(--bg); z-index: 1; }
-nav button { flex: 1; border: 0; background: none; border-bottom: 2px solid transparent; border-radius: 0; padding: 10px 6px; color: var(--muted); white-space: nowrap; }
-nav button.on { color: var(--text); border-color: var(--accent); font-weight: 600; }
+/* logo: three overlapping dots */
+.mark { display: flex; padding-left: 5px; }
+.mark i { width: 18px; height: 18px; margin-left: -5px; border-radius: 50%; background: var(--p-lav); box-shadow: 0 0 0 2px var(--bg); }
+.mark i:nth-child(2) { background: var(--p-rose); }
+.mark i:nth-child(3) { background: var(--p-mist); }
 
-button, input, select, textarea { font: inherit; color: inherit; }
-button { min-height: 44px; padding: 8px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); cursor: pointer; }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-@media (prefers-color-scheme: dark) { button.primary { color: #111827; } }
-button.danger { color: var(--danger); }
-button.link { border: 0; background: none; min-height: 0; padding: 4px 6px; color: var(--muted); }
-button.link.danger { color: var(--danger); }
+/* ---------- 3. shared by the page and the dialogs ---------- */
+:is(.app, dialog) *, :is(.app, dialog) *::before, :is(.app, dialog) *::after { box-sizing: border-box; }
+:is(.app, dialog) small { display: block; color: var(--muted); font-size: 13.5px; }
+:is(.app, dialog) a { color: var(--accent); text-underline-offset: 3px; }
+:is(.app, dialog) svg { flex: none; }
 
-.bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0; }
-.row { display: flex; align-items: center; gap: 12px; }
-.grow { flex: 1; min-width: 0; }
-.empty, .hint { color: var(--muted); }
-.err { color: var(--danger); margin: 8px 0 0; }
+/* buttons: pills */
+:is(.app, dialog) button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 52px; padding: 0 20px; border: 0; border-radius: 999px; background: var(--card); box-shadow: inset 0 0 0 1px var(--line); color: var(--text); font: 600 15.5px/1.2 var(--font); cursor: pointer; -webkit-appearance: none; }
+:is(.app, dialog) button.primary { background: var(--ink); box-shadow: none; color: var(--on-ink); }
+:is(.app, dialog) button.ghost { background: transparent; }
+:is(.app, dialog) button.danger { background: transparent; box-shadow: none; color: var(--danger); min-height: 44px; padding: 0 12px; }
+:is(.app, dialog) button.link { background: none; box-shadow: none; min-height: 44px; padding: 0 4px; color: var(--muted); font-weight: 600; }
+:is(.app, dialog) button.link.danger { color: var(--danger); }
+:is(.app, dialog) button.icon { width: 44px; min-height: 44px; padding: 0; border-radius: 50%; }
+:is(.app, dialog) button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+:is(.app, dialog) .bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+:is(.app, dialog) .bar > .primary:first-child { flex: 1 1 auto; }
+:is(.app, dialog) .bar.end { justify-content: flex-end; margin: 4px -8px -8px 0; }
+:is(.app, dialog) .choices { margin-top: 16px; }
+:is(.app, dialog) .choices button { flex: 1 1 auto; }
+:is(.app, dialog) .choices .primary { flex-basis: 100%; order: -1; }
+:is(.app, dialog) .choices .danger { flex: 0 0 auto; margin-left: auto; }
 
-.card { display: flex; align-items: center; gap: 12px; width: 100%; margin: 8px 0; padding: 12px; text-align: left; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
-.card.col { display: block; }
-.card.faded { opacity: 0.5; }
-.card strong { overflow-wrap: anywhere; }
-.swatch { width: 36px; height: 36px; border-radius: 50%; border: 1px solid var(--line); flex: none; }
-.meter { display: block; height: 6px; margin: 6px 0 4px; background: var(--line); border-radius: 3px; overflow: hidden; }
-.meter i { display: block; height: 100%; background: var(--accent); }
-.note { margin: 8px 0 0; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+:is(.app, dialog) .row { display: flex; align-items: flex-start; gap: 12px; }
+:is(.app, dialog) .grow { flex: 1; min-width: 0; }
+:is(.app, dialog) .note { margin: 0; color: var(--muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+:is(.app, dialog) .hint { margin: 4px 0 12px; color: var(--muted); }
+:is(.app, dialog) .err { margin: 12px 0 0; padding: 12px 16px; border-radius: var(--r-field); background: var(--rose); color: var(--danger); font-weight: 600; }
 
-.lines { list-style: none; margin: 8px 0 0; padding: 0; font-size: 0.9rem; }
-.lines li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-top: 1px solid var(--line); }
+/* cards */
+:is(.app, dialog) .card { display: flex; align-items: center; justify-content: flex-start; gap: 14px; width: 100%; margin: 10px 0; padding: 18px; text-align: left; background: var(--card); border: 0; border-radius: var(--r); box-shadow: 0 1px 2px rgb(0 0 0 / 0.03); color: inherit; font: inherit; }
+:is(.app, dialog) .card.col { display: block; padding: 20px; }
+:is(.app, dialog) .card strong { overflow-wrap: anywhere; }
+:is(.app, dialog) .card.faded { opacity: 0.5; }
+:is(.app, dialog) .card.col .row .grow > strong { display: block; font-size: 19px; font-weight: 700; line-height: 1.2; }
+:is(.app, dialog) .card.col .row .grow > small { margin-top: 3px; }
+dialog .card { background: var(--sunk); box-shadow: none; }
 
-.chip { font-size: 0.75rem; padding: 3px 9px; border-radius: 99px; border: 1px solid var(--line); white-space: nowrap; }
-.chip.requested { color: var(--accent); border-color: currentColor; }
-.chip.printed, .chip.accepted { color: var(--ok); border-color: currentColor; }
-.chip.declined { color: var(--danger); border-color: currentColor; }
-.badge { background: var(--accent); color: #fff; border-radius: 99px; padding: 1px 7px; font-size: 0.75rem; }
+/* spool: the card takes the filament tint, gauge in 10 segments */
+:is(.app, dialog) .spool { align-items: flex-start; background: color-mix(in oklab, var(--c) 11%, var(--card)); }
+dialog .spool { background: color-mix(in oklab, var(--c) 11%, var(--sunk)); }
+:is(.app, dialog) .swatch { width: 44px; height: 44px; margin-top: 2px; border-radius: 50%; flex: none; background: radial-gradient(circle, color-mix(in oklab, var(--c) 70%, #fff) 0 5px, var(--c) 5.5px); box-shadow: inset 0 0 0 1px var(--edge), 0 0 0 4px color-mix(in oklab, var(--c) 18%, var(--card)); }
+:is(.app, dialog) .maker { font-size: 13px; font-weight: 600; }
+:is(.app, dialog) .spool strong { display: block; margin-top: 1px; font-size: 18px; font-weight: 700; line-height: 1.2; }
+:is(.app, dialog) .meter { position: relative; display: block; height: 18px; margin: 12px 0 8px; background: var(--seg); -webkit-mask: repeating-linear-gradient(90deg, #000 0 calc(10% - 4px), transparent calc(10% - 4px) 10%); mask: repeating-linear-gradient(90deg, #000 0 calc(10% - 4px), transparent calc(10% - 4px) 10%); }
+:is(.app, dialog) .meter i { display: block; height: 100%; background: color-mix(in oklab, var(--c) 78%, var(--text)); }
+:is(.app, dialog) .qty { font-size: 24px; font-weight: 700; color: var(--text); letter-spacing: -0.02em; }
+:is(.app, dialog) .spool .chip { align-self: flex-start; }
 
-.balance { padding: 20px; text-align: center; background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
-.balance strong { display: block; font-size: 2rem; color: var(--ok); }
-.balance.due strong { color: var(--accent); }
+/* to assign */
+.app .card.todo { background: var(--lav); box-shadow: none; }
+.app .card.todo.failed { background: var(--rose); }
+.app .card.todo button:not(.primary) { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--text) 18%, transparent); }
+.app .card.todo button:not(.primary):not(.ghost) { background: var(--card); }
 
-details { margin-top: 8px; }
-summary { color: var(--muted); cursor: pointer; padding: 6px 0; }
+/* amounts */
+:is(.app, dialog) .amount { font-size: 26px; font-weight: 700; line-height: 1; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; white-space: nowrap; }
+:is(.app, dialog) .lines { list-style: none; margin: 14px 0 0; padding: 0; font-size: 14.5px; }
+:is(.app, dialog) .lines li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line); }
+:is(.app, dialog) .card > .lines:first-child li:first-child, :is(.app, dialog) details > .lines li:first-child { border-top: 0; }
+:is(.app, dialog) .lines li > span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+:is(.app, dialog) .lines .dot { display: inline-block; width: 12px; height: 12px; margin-right: 8px; border-radius: 50%; background: var(--c); box-shadow: inset 0 0 0 1px var(--edge); vertical-align: -1px; }
+:is(.app, dialog) .lines li.adj { color: var(--muted); }
+:is(.app, dialog) .lines li.adj .dot { display: none; }
+.app .wish .note { margin-top: 10px; }
 
-.login { min-height: 80vh; display: grid; place-items: center; text-align: center; }
-.login form { width: min(320px, 100%); display: grid; gap: 16px; text-align: left; }
+/* chips and badges */
+:is(.app, dialog) .chip { display: inline-flex; align-items: center; min-height: 28px; padding: 0 12px; border-radius: 99px; background: var(--sunk); color: var(--text); font-size: 12.5px; font-weight: 700; white-space: nowrap; }
+:is(.app, dialog) .chip.requested { background: var(--lav); color: var(--accent); }
+:is(.app, dialog) .chip.printed { background: var(--mint); color: var(--ok); }
+:is(.app, dialog) .chip.accepted { background: var(--mist); color: var(--text); }
+:is(.app, dialog) .chip.declined { background: var(--rose); color: var(--danger); }
+.app .card.todo .chip.declined { background: var(--card); }
+.app .badge { position: absolute; top: -6px; right: -12px; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 99px; background: var(--accent); color: var(--on-ink); font: 700 11px/18px var(--font); text-align: center; box-shadow: 0 0 0 2px var(--nav); }
 
-dialog { width: min(520px, calc(100vw - 24px)); max-height: calc(100dvh - 24px); padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--text); }
-dialog::backdrop { background: rgb(0 0 0 / 0.55); }
-dialog h2 { margin: 0 0 12px; font-size: 1.1rem; }
-dialog menu { display: flex; justify-content: flex-end; gap: 8px; margin: 16px 0 0; padding: 0; }
-label { display: block; margin: 10px 0; font-size: 0.85rem; color: var(--muted); }
-label.check { display: flex; align-items: center; gap: 8px; }
-input, select, textarea { display: block; width: 100%; min-height: 44px; margin-top: 4px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
-input[type='checkbox'] { width: 20px; min-height: 20px; margin: 0; }
-input[type='color'] { padding: 4px; }
-.two { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-fieldset { margin: 10px 0; padding: 8px 12px 12px; border: 1px solid var(--line); border-radius: 10px; }
-legend { font-size: 0.85rem; color: var(--muted); padding: 0 4px; }
-.line { display: grid; grid-template-columns: 1fr 84px 44px; gap: 8px; margin-bottom: 8px; }
-.line select, .line input { margin: 0; }
-.total { font-weight: 700; font-size: 1.1rem; text-align: right; margin: 12px 0 0; }
-video { width: 100%; max-height: 50vh; border-radius: 10px; background: #000; }
+/* collapsible parts (not billed, "More") */
+:is(.app, dialog) details { margin-top: 20px; }
+:is(.app, dialog) .card details { margin-top: 8px; }
+:is(.app, dialog) summary { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 4px; color: var(--muted); font-weight: 700; cursor: pointer; list-style: none; }
+:is(.app, dialog) summary::-webkit-details-marker { display: none; }
+:is(.app, dialog) summary::before { content: ""; width: 7px; height: 7px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); }
+:is(.app, dialog) details[open] summary::before { transform: rotate(45deg); }
+.app details .lines li > span:first-child { font-size: 14px; font-weight: 500; }
+.app details button.link { color: var(--accent); text-align: right; }
+.app .bambu .note { display: flex; gap: 10px; align-items: flex-start; color: var(--text); }
+.app .status { flex: none; width: 10px; height: 10px; margin-top: 6px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 4px var(--mint); }
+.app .status.off { background: var(--muted); box-shadow: 0 0 0 4px var(--sunk); }
 
-#toast { position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%); max-width: calc(100vw - 32px); padding: 10px 16px; border-radius: 10px; background: var(--text); color: var(--bg); opacity: 0; pointer-events: none; transition: opacity 0.2s; z-index: 10; }
-#toast.show { opacity: 1; }
+/* people */
+.app .avatar { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--a, var(--p-lav)); color: #141418; font-size: 18px; font-weight: 700; }
+.app .person .row { align-items: center; }
+.app .person .row > strong { font-size: 19px; font-weight: 700; }
+.app .person .lines { margin-top: 4px; }
+.app .person .bar button { flex: 1 1 auto; }
+.app .person .lines li > span:last-child { display: inline-flex; align-items: center; }
+.app .person .lines button.icon { width: 44px; min-height: 44px; margin: -10px -12px -10px 0; background: none; box-shadow: none; }
+
+/* a guest's balance */
+.app .balance { position: relative; overflow: hidden; padding: 26px 24px 28px; border-radius: 32px; background: var(--mint); }
+.app .balance.due { background: var(--lav); }
+.app .balance small { display: inline-flex; align-items: center; min-height: 30px; padding: 0 14px; border-radius: 99px; background: var(--ink); color: var(--on-ink); font-size: 13px; font-weight: 700; }
+.app .balance strong { display: block; margin-top: 18px; font-size: 76px; font-weight: 700; line-height: 0.95; letter-spacing: -0.04em; color: var(--ok); font-variant-numeric: tabular-nums; }
+.app .balance.due strong { color: var(--text); }
+.app .deco { position: absolute; top: 26px; right: 24px; display: flex; padding-left: 8px; }
+.app .deco i { width: 28px; height: 28px; margin-left: -8px; border-radius: 50%; background: var(--p-lav); box-shadow: 0 0 0 3px var(--lav); }
+.app .balance:not(.due) .deco i { box-shadow: 0 0 0 3px var(--mint); }
+.app .deco i:nth-child(2) { background: var(--p-rose); }
+.app .deco i:nth-child(3) { background: var(--p-mist); }
+
+/* empty states: an illustration and the sentence */
+.app .empty { display: flex; flex-direction: column; align-items: center; gap: 14px; margin: 12px 0; padding: 32px 24px; border-radius: var(--r); background: var(--card); color: var(--muted); text-align: center; }
+.app .empty p { margin: 0; font-weight: 600; }
+.app .empty.small { flex-direction: row; gap: 14px; padding: 16px 20px; text-align: left; }
+.app .empty.small .illus { width: 52px; height: 52px; }
+
+/* sign-in, invalid invite link */
+.app .login { min-height: 80vh; display: grid; place-items: center; padding: 24px 16px; }
+.app .login form { width: min(360px, 100%); padding: 28px 24px 24px; border-radius: 32px; background: var(--card); }
+.app .login .mark i { width: 40px; height: 40px; margin-left: -12px; box-shadow: 0 0 0 3px var(--card); }
+.app .login .mark { padding-left: 12px; }
+.app .login h1 { margin: 20px 0 12px; font-size: 34px; }
+.app .login form > .primary { width: 100%; margin-top: 8px; }
+.app .login .empty { background: none; color: var(--text); font-size: 18px; max-width: 320px; }
+
+/* ---------- 4. forms ---------- */
+:is(.app, dialog) label { display: block; margin: 14px 0; font-size: 14px; font-weight: 600; color: var(--muted); }
+:is(.app, dialog) input, :is(.app, dialog) select, :is(.app, dialog) textarea { display: block; width: 100%; min-height: 52px; margin-top: 6px; padding: 0 16px; border: 0; border-radius: var(--r-field); background: var(--sunk); color: var(--text); font: 500 16px/1.3 var(--font); }
+:is(.app, dialog) textarea { padding: 14px 16px; min-height: 88px; resize: vertical; }
+:is(.app, dialog) :is(input, select, textarea):focus-visible { outline: 2px solid var(--accent); outline-offset: 0; }
+:is(.app, dialog) ::placeholder { color: var(--muted); }
+:is(.app, dialog) select { -webkit-appearance: none; appearance: none; padding-right: 40px; text-overflow: ellipsis; background-image: linear-gradient(45deg, transparent 50%, var(--muted) 50%), linear-gradient(135deg, var(--muted) 50%, transparent 50%); background-position: calc(100% - 22px) 50%, calc(100% - 16px) 50%; background-size: 6px 6px; background-repeat: no-repeat; }
+:is(.app, dialog) input[type='color'] { padding: 6px; cursor: pointer; }
+:is(.app, dialog) input[type='color']::-webkit-color-swatch-wrapper { padding: 0; }
+:is(.app, dialog) input[type='color']::-webkit-color-swatch { border: 0; border-radius: 11px; }
+:is(.app, dialog) input[type='color']::-moz-color-swatch { border: 0; border-radius: 11px; }
+:is(.app, dialog) label.check { display: flex; align-items: center; gap: 12px; min-height: 44px; color: var(--text); font-weight: 600; }
+:is(.app, dialog) input[type='checkbox'] { flex: none; width: 24px; min-height: 24px; height: 24px; margin: 0; padding: 0; accent-color: var(--ink); }
+:is(.app, dialog) .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+:is(.app, dialog) .two > label { margin-bottom: 0; }
+:is(.app, dialog) fieldset { margin: 16px 0; padding: 4px 14px 14px; border: 1px solid var(--line); border-radius: 22px; }
+:is(.app, dialog) legend { padding: 0 6px; font-size: 14px; font-weight: 600; color: var(--muted); }
+:is(.app, dialog) .line { display: grid; grid-template-columns: minmax(0, 1fr) 84px 44px; gap: 8px; align-items: center; margin-bottom: 8px; }
+:is(.app, dialog) .line select, :is(.app, dialog) .line input { margin: 0; }
+:is(.app, dialog) .total { display: flex; justify-content: space-between; align-items: baseline; margin: 16px 0 0; padding: 16px 18px; border-radius: 20px; background: var(--lav); font-size: 26px; font-weight: 700; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+:is(.app, dialog) .scanview { position: relative; margin: 4px 0 8px; }
+:is(.app, dialog) video { display: block; width: 100%; aspect-ratio: 4 / 3; max-height: 50vh; border-radius: 22px; background: #000; object-fit: cover; }
+:is(.app, dialog) .aim { position: absolute; inset: 26% 14%; border-radius: 14px; box-shadow: 0 0 0 2px rgb(255 255 255 / 0.85); pointer-events: none; }
+
+/* ---------- 5. dialogs: a sheet rising from the bottom, under the thumb ---------- */
+dialog { box-sizing: border-box; width: 100%; max-width: 640px; max-height: calc(100dvh - 24px); margin: auto auto 0; padding: 24px 20px calc(20px + env(safe-area-inset-bottom)); border: 0; border-radius: 30px 30px 0 0; background: var(--card); color: var(--text); font: 500 16px/1.4 var(--font); box-shadow: 0 -10px 40px var(--shadow); -webkit-font-smoothing: antialiased; }
+dialog::backdrop { background: var(--scrim); }
+dialog h2 { margin: 0 0 16px; font-size: 26px; font-weight: 700; line-height: 1.15; letter-spacing: -0.02em; }
+dialog h2 small { margin-top: 4px; font-size: 16px; font-weight: 600; letter-spacing: 0; }
+dialog menu { display: flex; gap: 8px; margin: 20px 0 0; padding: 0; }
+dialog menu button { flex: 1; }
+dialog menu .primary { flex: 2; }
+dialog .stack { display: grid; gap: 8px; margin-top: 8px; }
+dialog .delete-zone { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+
+/* ---------- 6. toast: at the top, never over the buttons ---------- */
+#toast { position: fixed; inset: auto; left: 50%; margin: 0; border: 0; overflow: visible; top: calc(14px + env(safe-area-inset-top)); z-index: 10; max-width: calc(100vw - 32px); padding: 12px 20px; border-radius: 999px; background: var(--ink); color: var(--on-ink); font: 600 14.5px/1.3 var(--font); box-shadow: 0 10px 30px var(--shadow); transform: translate(-50%, -8px); opacity: 0; pointer-events: none; transition: opacity 0.2s, transform 0.2s; }
+#toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+/* ---------- 7. tab bar, under the thumb ---------- */
+.app nav { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 2; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 4px; max-width: 616px; margin: 0 auto; padding: 6px; border-radius: 999px; background: var(--nav); box-shadow: 0 0 0 1px var(--line), 0 14px 34px var(--shadow); }
+.app nav button { flex-direction: column; gap: 2px; min-height: 60px; padding: 6px 2px; border-radius: 999px; background: none; box-shadow: none; color: var(--muted); font-size: 11.5px; font-weight: 700; }
+.app nav button.on { background: var(--ink); color: var(--on-ink); }
+.app nav button.on .badge { box-shadow: 0 0 0 2px var(--ink); }
+.app nav .ico { position: relative; display: inline-flex; }
+.app nav button > span:last-child { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

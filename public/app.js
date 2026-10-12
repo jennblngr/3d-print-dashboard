@@ -53,8 +53,17 @@ async function refresh() {
   if (!guestToken) takeTagFromUrl();
 }
 
+// The toast is a popover: showing it again lifts it above a dialog opened in the meantime.
+function raiseToast() {
+  if (!toastEl.showPopover) return;
+  if (toastEl.matches(':popover-open')) toastEl.hidePopover();
+  toastEl.showPopover();
+}
+
 function toast(msg) {
   toastEl.textContent = msg;
+  raiseToast();
+  toastEl.offsetWidth; // lets the fade-in start from the hidden state
   toastEl.classList.add('show');
   clearTimeout(toast.timer);
   toast.timer = setTimeout(() => toastEl.classList.remove('show'), 3000);
@@ -72,10 +81,10 @@ dlg.addEventListener('close', runCleanup); // Escape key / back gesture
 dlg.addEventListener('input', printTotal);
 
 // onSubmit may return a function to run once the dialog is closed and data reloaded.
-function openDialog(title, bodyHtml, onSubmit, submitLabel = t('save')) {
+function openDialog(title, bodyHtml, onSubmit, { submitLabel = t('save'), subtitle = '' } = {}) {
   closeDialog();
   dlg.innerHTML = `<form>
-    <h2>${h(title)}</h2>
+    <h2>${h(title)}${subtitle ? `<small>${h(subtitle)}</small>` : ''}</h2>
     ${bodyHtml}
     <p class="err" hidden></p>
     <menu>
@@ -99,25 +108,70 @@ function openDialog(title, bodyHtml, onSubmit, submitLabel = t('save')) {
     }
   };
   dlg.showModal();
+  if (toastEl.classList.contains('show')) raiseToast();
 }
 
 function field(name, label, value = '', attrs = '') {
   return `<label>${h(label)}<input name="${name}" value="${h(value)}" ${attrs}></label>`;
 }
-const empty = () => `<p class="empty">${t('empty')}</p>`;
+
+// ---------- icons and illustrations (inline SVG: nothing is fetched) ----------
+
+const icon = (shapes, size = 20, stroke = 1.8) =>
+  `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${shapes}</svg>`;
+const icons = {
+  plus: icon('<path d="M12 5v14M5 12h14"/>'),
+  scan: icon('<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 8v8M10.7 8v8M13.3 8v8M16 8v8"/>'),
+  logout: icon('<path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 8l-4 4 4 4M6 12h9"/>', 18),
+  trash: icon('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>', 18),
+  refresh: icon('<path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/>', 18),
+  link: icon('<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>', 18),
+  pay: icon('<path d="M17 6.8A6.5 6.5 0 1 0 17 17.2M4.5 10h8M4.5 14h8"/>', 18),
+  close: icon('<path d="M6 6l12 12M18 6L6 18"/>', 18, 2),
+  spools: icon('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>', 22),
+  prints: icon('<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>', 22),
+  people: icon('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c1.8.7 3 2.4 3.5 5.2"/>', 22),
+  wishes: icon('<path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.2 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"/>', 22),
+};
+
+const illustration = shapes =>
+  `<svg class="illus" viewBox="0 0 120 120" width="112" height="112" aria-hidden="true"><circle cx="60" cy="60" r="56" style="fill: var(--lav)"/>${shapes}</svg>`;
+const illustrations = {
+  spool: illustration('<circle cx="54" cy="62" r="34" style="fill: var(--p-lav)"/><circle cx="54" cy="62" r="25" fill="none" stroke="#8C91F2" stroke-width="2" stroke-dasharray="2 5"/><circle cx="54" cy="62" r="9" style="fill: var(--card)"/><path d="M86 70c10-2 14-14 8-24" fill="none" style="stroke: var(--p-rose)" stroke-width="4" stroke-linecap="round"/><circle cx="93" cy="40" r="7" style="fill: var(--p-mist)"/>'),
+  box: illustration('<path d="M60 26l32 18-32 18-32-18z" style="fill: var(--p-rose)"/><path d="M28 44l32 18v36L28 80z" style="fill: var(--p-lav)"/><path d="M92 44L60 62v36l32-18z" style="fill: var(--p-mist)"/>'),
+  heart: illustration('<path d="M60 92S30 74 30 52a15 15 0 0 1 30-5 15 15 0 0 1 30 5c0 22-30 40-30 40z" style="fill: var(--p-rose)"/><circle cx="88" cy="32" r="7" style="fill: var(--p-lav)"/>'),
+  brokenLink: illustration('<rect x="18" y="52" width="42" height="22" rx="11" fill="none" style="stroke: var(--p-lav)" stroke-width="7" transform="rotate(-35 39 63)"/><rect x="62" y="44" width="42" height="22" rx="11" fill="none" style="stroke: var(--p-rose)" stroke-width="7" transform="rotate(-35 83 55)"/><path d="M56 40l-4-9M66 42l5-8" fill="none" style="stroke: var(--p-mist)" stroke-width="4" stroke-linecap="round"/>'),
+};
+const mark = '<span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>';
+const AVATAR_TINTS = ['--p-lav', '--p-rose', '--p-mist'];
+
+const empty = (kind, small = false) => `<div class="empty${small ? ' small' : ''}">${illustrations[kind]}<p>${t('empty')}</p></div>`;
+
+// Pages without the tab bar (sign-in, messages, a guest's page) are "bare".
+function setPage(html, bare = false) {
+  app.className = bare ? 'app guest' : 'app';
+  app.innerHTML = html;
+}
 
 // ---------- shared cards ----------
 
+// The colour of the filament a print line used, when it is known: sent with the line, or
+// found on a spool still in stock that carries the same name.
+function lineDot(l) {
+  const hex = l.color_hex || state.spools?.find(s => spoolName(s) === l.label)?.color_hex;
+  return hex ? `<i class="dot" style="--c:${h(hex)}"></i>` : '';
+}
+
 function printCard(p, admin) {
-  const lines = p.lines.map(l => `<li><span>${h(l.label)} · ${+l.grams.toFixed(1)} g</span><span>${eur(l.cost_cents)}</span></li>`);
-  if (p.adjust_cents) lines.push(`<li><span>${h(p.adjust_note || t('adjustment'))}</span><span>${eur(p.adjust_cents)}</span></li>`);
-  return `<article class="card col">
+  const lines = p.lines.map(l => `<li><span>${lineDot(l)}${h(l.label)} · ${+l.grams.toFixed(1)} g</span><span>${eur(l.cost_cents)}</span></li>`);
+  if (p.adjust_cents) lines.push(`<li class="adj"><span>${h(p.adjust_note || t('adjustment'))}</span><span>${eur(p.adjust_cents)}</span></li>`);
+  return `<article class="card col print">
     <div class="row">
       <div class="grow"><strong>${h(p.title)}</strong><small>${showDate(p.printed_at)}${admin ? ' · ' + h(p.person_name) : ''}</small></div>
-      <strong>${eur(p.total_cents)}</strong>
+      <strong class="amount">${eur(p.total_cents)}</strong>
     </div>
     <ul class="lines">${lines.join('')}</ul>
-    ${admin ? `<div class="bar"><button class="danger" data-act="delPrint" data-id="${p.id}">${t('delete')}</button></div>` : ''}
+    ${admin ? `<div class="bar end"><button class="danger" data-act="delPrint" data-id="${p.id}">${t('delete')}</button></div>` : ''}
   </article>`;
 }
 
@@ -132,30 +186,32 @@ function wishCard(w, admin) {
   } else if (w.status === 'requested') {
     buttons = `<button class="danger" data-act="delMyWish" data-id="${w.id}">${t('delete')}</button>`;
   }
-  return `<article class="card col">
+  const deciding = admin && (w.status === 'requested' || w.status === 'accepted');
+  return `<article class="card col wish">
     <div class="row">
       <div class="grow"><strong>${title}</strong>${admin ? `<small>${h(w.person_name)}</small>` : ''}</div>
       <span class="chip ${w.status}">${t(w.status)}</span>
     </div>
     ${w.note ? `<p class="note">${h(w.note)}</p>` : ''}
-    ${buttons ? `<div class="bar">${buttons}</div>` : ''}
+    ${buttons ? `<div class="bar ${deciding ? 'choices' : 'end'}">${buttons}</div>` : ''}
   </article>`;
 }
 
 const paymentRow = (p, admin) => `<li>
   <span>${showDate(p.paid_at)}${p.note ? ' · ' + h(p.note) : ''}</span>
-  <span>${eur(p.amount_cents)}${admin ? ` <button class="link danger" data-act="delPay" data-id="${p.id}" aria-label="${t('delete')}">×</button>` : ''}</span>
+  <span>${eur(p.amount_cents)}${admin ? ` <button class="link danger icon" data-act="delPay" data-id="${p.id}" aria-label="${t('delete')}">${icon('<path d="M6 6l12 12M18 6L6 18"/>', 16, 2)}</button>` : ''}</span>
 </li>`;
 
 // ---------- owner area ----------
 
 function renderLogin() {
-  app.innerHTML = `<main class="login"><form id="login">
+  setPage(`<main class="login"><form id="login">
+    ${mark}
     <h1>${t('appName')}</h1>
     <label>${t('password')}<input name="password" type="password" autocomplete="current-password" required autofocus></label>
     <p class="err" hidden></p>
     <button class="primary">${t('login')}</button>
-  </form></main>`;
+  </form></main>`, true);
   $('#login').onsubmit = async e => {
     e.preventDefault();
     try {
@@ -170,37 +226,41 @@ function renderLogin() {
 }
 
 function renderMessage(msg) {
-  app.innerHTML = `<main class="login"><p>${h(msg)}</p></main>`;
+  setPage(`<main class="login"><div class="empty">${illustrations.brokenLink}<p>${h(msg)}</p></div></main>`, true);
 }
 
 const views = {
   spools() {
     const cards = state.spools.map(spoolCard);
     return `<div class="bar">
-      <button class="primary" data-act="scan">${t('scanBarcode')}</button>
-      <button data-act="spool">${t('add')}</button>
-    </div>${cards.join('') || empty()}`;
+      <button class="primary" data-act="scan">${icons.scan}${t('scanBarcode')}</button>
+      <button data-act="spool">${icons.plus}${t('add')}</button>
+    </div>${cards.join('') || empty('spool')}`;
   },
   prints() {
     const pending = state.bambu_prints.filter(b => b.state === 'pending');
     const handled = state.bambu_prints.filter(b => b.state !== 'pending');
-    return `<div class="bar"><button class="primary" data-act="print">${t('newPrint')}</button></div>
+    return `<div class="bar"><button class="primary" data-act="print">${icons.plus}${t('newPrint')}</button></div>
       ${pending.length ? `<h2>${t('toAssign')}</h2>${pending.map(bambuCard).join('')}<h2>${t('prints')}</h2>` : ''}
-      ${state.prints.map(p => printCard(p, true)).join('') || empty()}
+      ${state.prints.map(p => printCard(p, true)).join('') || empty('box')}
       ${handled.length ? `<details><summary>${t('notBilled', { count: handled.length })}</summary>
         <article class="card col"><ul class="lines">${handled.map(bambuRow).join('')}</ul></article></details>` : ''}
       ${bambuPanel()}`;
   },
   people() {
-    const cards = state.people.map(p => {
+    const cards = state.people.map((p, i) => {
       const b = p.balance_cents;
       const label = b > 0 ? t('owes', { amount: eur(b) }) : b < 0 ? t('credit', { amount: eur(-b) }) : t('settled');
       const pays = state.payments.filter(x => x.person_id === p.id);
-      return `<article class="card col">
-        <div class="row"><strong class="grow">${h(p.name)}</strong><span class="chip ${b > 0 ? 'declined' : 'printed'}">${label}</span></div>
+      const initial = (Array.from(p.name.trim())[0] || '').toUpperCase();
+      return `<article class="card col person">
+        <div class="row">
+          <span class="avatar" style="--a: var(${AVATAR_TINTS[i % AVATAR_TINTS.length]})" aria-hidden="true">${h(initial)}</span>
+          <strong class="grow">${h(p.name)}</strong><span class="chip ${b > 0 ? 'declined' : 'printed'}">${label}</span>
+        </div>
         <div class="bar">
-          <button data-act="invite" data-id="${p.id}">${t('inviteLink')}</button>
-          <button data-act="pay" data-id="${p.id}">${t('addPayment')}</button>
+          <button data-act="invite" data-id="${p.id}">${icons.link}${t('inviteLink')}</button>
+          <button data-act="pay" data-id="${p.id}">${icons.pay}${t('addPayment')}</button>
         </div>
         <details>
           <summary>${t('more')}</summary>
@@ -212,12 +272,12 @@ const views = {
         </details>
       </article>`;
     });
-    return `<div class="bar"><button class="primary" data-act="person">${t('add')}</button></div>${cards.join('') || empty()}`;
+    return `<div class="bar"><button class="primary" data-act="person">${icons.plus}${t('add')}</button></div>${cards.join('') || empty('spool')}`;
   },
   wishes() {
     const order = ['requested', 'accepted', 'printed', 'declined'];
     const sorted = [...state.wishes].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status));
-    return sorted.map(w => wishCard(w, true)).join('') || empty();
+    return sorted.map(w => wishCard(w, true)).join('') || empty('heart');
   },
 };
 
@@ -227,27 +287,35 @@ function renderAdmin() {
     prints: state.bambu_prints.filter(b => b.state === 'pending').length,
     wishes: state.wishes.filter(w => w.status === 'requested').length,
   };
-  app.innerHTML = `<header><h1>${t('appName')}</h1><button class="link" data-act="logout">${t('logout')}</button></header>
-    <nav>${Object.keys(views).map(k =>
-      `<button data-act="tab" data-id="${k}" class="${k === tab ? 'on' : ''}">${t(k)}${badges[k] ? ` <b class="badge">${badges[k]}</b>` : ''}</button>`
-    ).join('')}</nav>
+  setPage(`<header>
+      <div class="top">
+        <p class="appname">${mark}${t('appName')}</p>
+        <button class="link" data-act="logout">${icons.logout}${t('logout')}</button>
+      </div>
+      <h1>${t(tab)}</h1>
+    </header>
     <main>${views[tab]()}</main>
-    <footer>${state.last_backup ? t('lastBackup', { date: new Date(state.last_backup).toLocaleString(lang) }) : t('noBackup')}</footer>`;
+    <footer>${state.last_backup ? t('lastBackup', { date: new Date(state.last_backup).toLocaleString(lang) }) : t('noBackup')}</footer>
+    <nav aria-label="${t('sections')}">${Object.keys(views).map(k =>
+      `<button data-act="tab" data-id="${k}" ${k === tab ? 'class="on" aria-current="page"' : ''}>
+        <span class="ico">${icons[k]}${badges[k] ? `<b class="badge">${badges[k]}</b>` : ''}</span><span>${t(k)}</span>
+      </button>`
+    ).join('')}</nav>`);
 }
 
 // A print read from the Bambu Lab account, waiting for the owner to say what it was for.
 function bambuCard(b) {
   const planned = b.failed ? ` · ${t('plannedGrams', { grams: +b.planned_g.toFixed(1) })}` : '';
-  return `<article class="card col">
+  return `<article class="card col todo ${b.failed ? 'failed' : ''}">
     <div class="row">
       <div class="grow"><strong>${h(b.title)}</strong>
         <small>${showDate(localDay(b.ended_at))}${b.material ? ' · ' + h(b.material) : ''} · ${+b.suggested_g.toFixed(1)} g${planned}</small></div>
       ${b.failed ? `<span class="chip declined">${t('failedPrint')}</span>` : ''}
     </div>
-    <div class="bar">
+    <div class="bar choices">
       ${b.failed ? '' : `<button class="primary" data-act="bambuBill" data-id="${b.id}">${t('bill')}</button>`}
       <button class="${b.failed ? 'primary' : ''}" data-act="bambuStock" data-id="${b.id}">${t('stockOnly')}</button>
-      <button data-act="bambuIgnore" data-id="${b.id}">${t('ignore')}</button>
+      <button class="ghost" data-act="bambuIgnore" data-id="${b.id}">${t('ignore')}</button>
     </div>
   </article>`;
 }
@@ -270,10 +338,10 @@ function bambuPanel() {
     : b.last_sync ? t('bambuOn', { date: new Date(b.last_sync).toLocaleString(lang) })
     : t('bambuNever');
   return `<h2>${t('bambuTitle')}</h2>
-    <article class="card col">
-      <p class="note">${status}</p>
+    <article class="card col bambu">
+      <p class="note"><span class="status ${b.connected && !b.error ? '' : 'off'}" aria-hidden="true"></span><span>${status}</span></p>
       <div class="bar">
-        ${!b.connected || broken ? `<button class="primary" data-act="bambuConnect">${t('bambuConnect')}</button>` : `<button data-act="bambuSync">${t('bambuSync')}</button>`}
+        ${!b.connected || broken ? `<button class="primary" data-act="bambuConnect">${t('bambuConnect')}</button>` : `<button data-act="bambuSync">${icons.refresh}${t('bambuSync')}</button>`}
         ${b.connected ? `<button class="danger" data-act="bambuDisconnect">${t('bambuDisconnect')}</button>` : ''}
       </div>
     </article>`;
@@ -281,13 +349,16 @@ function bambuPanel() {
 
 function spoolCard(s) {
   const pct = Math.max(0, Math.min(100, (s.remaining_g / s.weight_g) * 100));
-  return `<button type="button" class="card ${s.archived ? 'faded' : ''}" data-act="spool" data-id="${s.id}">
-    <span class="swatch" style="background:${h(s.color_hex)}"></span>
+  const name = [s.material, s.variant, s.color_name].filter(Boolean).join(' ');
+  return `<button type="button" class="card spool ${s.archived ? 'faded' : ''}" style="--c:${h(s.color_hex)}" data-act="spool" data-id="${s.id}">
+    <span class="swatch" aria-hidden="true"></span>
     <span class="grow">
-      <strong>${h(spoolName(s))}</strong>
+      <small class="maker">${h(s.brand)}</small>
+      <strong>${h(name)}</strong>
       <span class="meter"><i style="width:${pct}%"></i></span>
-      <small>${Math.round(s.remaining_g)} / ${Math.round(s.weight_g)} g · ${eur((s.price_cents / s.weight_g) * 1000)}/kg</small>
+      <small><b class="qty">${Math.round(s.remaining_g)}</b> / ${Math.round(s.weight_g)} g · ${eur((s.price_cents / s.weight_g) * 1000)}/kg</small>
     </span>
+    ${s.archived ? `<span class="chip">${t('finished')}</span>` : ''}
   </button>`;
 }
 
@@ -314,7 +385,7 @@ function spoolDialog(spool, preset = {}) {
     ${field('code', t('code'), s.code ?? '', 'maxlength="500"')}
     <label>${t('notes')}<textarea name="notes" maxlength="1000" rows="2">${h(s.notes)}</textarea></label>
     ${s.id ? `<label class="check"><input type="checkbox" name="archived" ${s.archived ? 'checked' : ''}>${t('archived')}</label>
-      <button type="button" class="danger" data-act="delSpool" data-id="${s.id}">${t('delete')}</button>` : ''}`;
+      <div class="delete-zone"><button type="button" class="danger" data-act="delSpool" data-id="${s.id}">${icons.trash}${t('delete')}</button></div>` : ''}`;
   openDialog(s.id ? t('editSpool') : t('newSpool'), body, async fd => {
     const data = Object.fromEntries(fd);
     data.price_cents = toCents(data.price);
@@ -360,21 +431,23 @@ function handleBarcode(barcode) {
     toast(t(product ? 'productKnown' : 'spoolNew'));
     return spoolDialog(undefined, scanPreset);
   }
-  openDialog(t('sameProduct'), `${owned.map(spoolCard).join('')}
-    <div class="bar"><button type="button" class="primary" data-act="spoolFromScan">${t('newSame')}</button></div>`);
+  openDialog(t('sameProduct'), `<div class="stack">${owned.map(spoolCard).join('')}</div>
+    <div class="bar"><button type="button" class="primary" data-act="spoolFromScan">${icons.plus}${t('newSame')}</button></div>`);
 }
 
 async function scanDialog() {
-  const body = `<video playsinline muted></video><p class="hint"></p>${field('code', t('orType'), '', 'maxlength="500"')}`;
+  const body = `<div class="scanview"><video playsinline muted></video><span class="aim" aria-hidden="true"></span></div>
+    <p class="hint" hidden></p>${field('code', t('orType'), '', 'maxlength="500"')}`;
   openDialog(t('scanBarcode'), body, fd => {
     const code = fd.get('code').trim();
     return code ? () => handleBarcode(code) : null;
-  }, 'OK');
+  }, { submitLabel: 'OK' });
   const video = $('video', dlg);
   const hint = $('.hint', dlg);
   const fallback = key => {
-    video.hidden = true;
+    $('.scanview', dlg).hidden = true;
     hint.textContent = t(key);
+    hint.hidden = false;
   };
   if (!('BarcodeDetector' in window) || !navigator.mediaDevices) return fallback('noScanner');
   let stopped = false;
@@ -412,7 +485,7 @@ function printDialog(pre = {}) {
   lineRow = () => `<div class="line">
     <select name="spool" aria-label="${t('filament')}">${options}</select>
     <input name="grams" type="number" inputmode="decimal" min="0.1" step="0.1" placeholder="g" aria-label="${t('grams')}" required>
-    <button type="button" data-act="rmLine" aria-label="${t('delete')}">×</button>
+    <button type="button" class="icon" data-act="rmLine" aria-label="${t('delete')}">${icons.close}</button>
   </div>`;
   const body = `
     <label>${t('person')}<select name="person_id">${state.people.map(p =>
@@ -421,7 +494,7 @@ function printDialog(pre = {}) {
     ${field('printed_at', t('date'), pre.printed_at || today(), 'type="date" required')}
     <fieldset><legend>${t('filament')}</legend>
       <div id="lines">${spools.length ? lineRow() : ''}</div>
-      ${spools.length ? `<button type="button" data-act="addLine">${t('addFilament')}</button>` : ''}
+      ${spools.length ? `<button type="button" class="ghost" data-act="addLine">${t('addFilament')}</button>` : ''}
     </fieldset>
     ${field('adjust', t('adjust'), '', 'inputmode="decimal"')}
     ${field('adjust_note', t('adjustNote'), '', 'maxlength="200"')}
@@ -450,9 +523,9 @@ function stockDialog(b) {
     <label>${t('spool')}<select name="spool_id">${spoolOptions(spools, state.last_spool_id)}</select></label>
     ${field('grams', t('gramsUsed'), b.suggested_g || '', 'type="number" inputmode="decimal" min="0.1" step="0.1" required')}
     ${b.failed ? `<p class="hint">${t('failedHint')}</p>` : ''}`;
-  openDialog(`${t('stockOnlyTitle')} · ${b.title}`, body, async fd => {
+  openDialog(t('stockOnlyTitle'), body, async fd => {
     await api('POST', `/api/bambu/prints/${b.id}/stock`, { spool_id: +fd.get('spool_id'), grams: parseFloat(fd.get('grams')) });
-  });
+  }, { subtitle: b.title });
 }
 
 // Two steps: Bambu Lab emails a one-time code, which is then typed here. No Bambu password involved.
@@ -465,8 +538,8 @@ function bambuConnectDialog() {
     return () => openDialog(t('bambuTitle'), codeField, async fd2 => {
       await api('POST', '/api/bambu/login', { email, code: fd2.get('code').trim() });
       return () => toast(t('bambuConnected'));
-    }, t('bambuConnect'));
-  }, t('bambuSendCode'));
+    }, { submitLabel: t('bambuConnect') });
+  }, { submitLabel: t('bambuSendCode') });
 }
 
 function printTotal() {
@@ -477,26 +550,27 @@ function printTotal() {
     const spool = state.spools.find(s => s.id === +$('select', row).value);
     if (spool) cents += Math.round(((parseFloat($('input', row).value) || 0) * spool.price_cents) / spool.weight_g);
   }
-  out.textContent = `${t('total')} ${eur(cents)}`;
+  out.innerHTML = `<span>${t('total')}</span><span>${eur(cents)}</span>`;
 }
 
 // ---------- guest area ----------
 
 function renderGuest() {
   const b = state.balance_cents;
-  app.innerHTML = `<header><h1>${t('hello', { name: h(state.person.name) })}</h1></header>
+  setPage(`<header><h1>${t('hello', { name: h(state.person.name) })}</h1></header>
     <main>
       <section class="balance ${b > 0 ? 'due' : ''}">
+        <span class="deco" aria-hidden="true"><i></i><i></i><i></i></span>
         <small>${b > 0 ? t('youOwe') : b < 0 ? t('yourCredit') : t('allSettled')}</small>
         <strong>${eur(Math.abs(b))}</strong>
       </section>
       <h2>${t('wishes')}</h2>
-      <div class="bar"><button class="primary" data-act="wish">${t('newWish')}</button></div>
-      ${state.wishes.map(w => wishCard(w, false)).join('') || empty()}
+      <div class="bar"><button class="primary" data-act="wish">${icons.plus}${t('newWish')}</button></div>
+      ${state.wishes.map(w => wishCard(w, false)).join('') || empty('heart', true)}
       <h2>${t('prints')}</h2>
-      ${state.prints.map(p => printCard(p, false)).join('') || empty()}
+      ${state.prints.map(p => printCard(p, false)).join('') || empty('box', true)}
       ${state.payments.length ? `<h2>${t('payments')}</h2><article class="card col"><ul class="lines">${state.payments.map(p => paymentRow(p, false)).join('')}</ul></article>` : ''}
-    </main>`;
+    </main>`, true);
 }
 
 // ---------- actions ----------
@@ -514,6 +588,7 @@ const actions = {
     tab = id;
     sessionStorage.setItem('tab', id);
     renderAdmin();
+    scrollTo(0, 0);
   },
   async logout() {
     await api('POST', '/api/logout');
@@ -576,9 +651,9 @@ const actions = {
     const person = state.people.find(p => p.id === id);
     const due = person.balance_cents > 0 ? (person.balance_cents / 100).toFixed(2) : '';
     const body = field('amount', t('amount'), due, 'required inputmode="decimal"') + field('paid_at', t('date'), today(), 'type="date" required') + field('note', t('note'), '', 'maxlength="200"');
-    openDialog(`${t('addPayment')} · ${person.name}`, body, async fd => {
+    openDialog(t('addPayment'), body, async fd => {
       await api('POST', '/api/payments', { person_id: id, amount_cents: toCents(fd.get('amount')), paid_at: fd.get('paid_at'), note: fd.get('note') });
-    });
+    }, { subtitle: person.name });
   },
   delPay: id => remove(`/api/payments/${id}`),
   async newToken(id) {
@@ -603,7 +678,7 @@ const actions = {
       `<label>${t('wishNote')}<textarea name="note" maxlength="500" rows="3"></textarea></label>`;
     openDialog(t('newWish'), body, async fd => {
       await api('POST', '/api/my/wishes', Object.fromEntries(fd));
-    }, t('send'));
+    }, { submitLabel: t('send') });
   },
   delMyWish: id => remove(`/api/my/wishes/${id}`),
 };
