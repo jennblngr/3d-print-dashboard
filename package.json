@@ -7,7 +7,6 @@
   "scripts": {
     "start": "node server.js",
     "set-password": "node scripts/set-password.js",
-    "restore": "node scripts/restore-backup.js",
-    "icons": "node scripts/make-icons.js"
+    "restore": "node scripts/restore-backup.js"
   }
 }
