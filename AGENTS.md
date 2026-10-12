@@ -121,6 +121,10 @@ d'elles est violée, préviens-moi immédiatement.
 - Coût = grammes × prix de la bobine ÷ poids de la bobine, plus un ajustement
   manuel. Ni électricité ni usure machine.
 - Une impression ne se modifie pas : on la supprime et on la ressaisit.
+- Une impression peut être « pour moi » (choix « Moi » dans la liste des
+  personnes) : le stock baisse, personne n'est facturé, et son coût en filament
+  s'additionne dans la ligne « Moi » de l'onglet Personnes. « Moi » n'est pas
+  une personne : ni lien d'invitation, ni solde, ni paiement.
 - Le code-barres désigne un produit (partagé par plusieurs bobines) ; le tag
   RFID désigne une seule bobine.
 - Tags TigerTag : un navigateur ne peut pas les lire (format brut, pas NDEF).

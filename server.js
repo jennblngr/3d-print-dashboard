@@ -106,9 +106,10 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'requested',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
+  -- person_id is NULL for a print the owner made for themselves: stock moves, nobody is billed
   CREATE TABLE IF NOT EXISTS prints (
     id INTEGER PRIMARY KEY,
-    person_id INTEGER NOT NULL REFERENCES people(id) ON DELETE CASCADE,
+    person_id INTEGER REFERENCES people(id) ON DELETE CASCADE,
     title TEXT NOT NULL,
     printed_at TEXT NOT NULL,
     adjust_cents INTEGER NOT NULL DEFAULT 0,
@@ -173,6 +174,50 @@ for (const table of ['spools', 'products']) {
   if (!db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === 'variant')) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN variant TEXT NOT NULL DEFAULT ''`);
   }
+}
+// Databases created before the owner could record prints for themselves: every print had to
+// belong to a person. SQLite cannot relax that in place, so the table is rebuilt, and the
+// rebuild is only kept if every print and every amount came through unchanged.
+if (db.prepare('PRAGMA table_info(prints)').all().some(c => c.name === 'person_id' && c.notnull)) {
+  const snapshot = table =>
+    JSON.stringify(db.prepare(
+      `SELECT p.id, p.person_id, p.title, p.printed_at, p.adjust_cents, p.adjust_note, p.wish_id, p.created_at,
+              (SELECT COUNT(*) FROM print_lines l WHERE l.print_id = p.id) AS line_count,
+              (SELECT COALESCE(SUM(l.cost_cents), 0) FROM print_lines l WHERE l.print_id = p.id) AS cost_cents,
+              (SELECT COUNT(*) FROM bambu_prints b WHERE b.print_id = p.id) AS bambu_count
+       FROM ${table} p ORDER BY p.id`
+    ).all());
+  // With foreign keys on, dropping the old table would also delete the lines of every print.
+  db.exec('PRAGMA foreign_keys = OFF');
+  db.exec('BEGIN');
+  try {
+    const before = snapshot('prints');
+    db.exec(`
+      CREATE TABLE prints_new (
+        id INTEGER PRIMARY KEY,
+        person_id INTEGER REFERENCES people(id) ON DELETE CASCADE,
+        title TEXT NOT NULL,
+        printed_at TEXT NOT NULL,
+        adjust_cents INTEGER NOT NULL DEFAULT 0,
+        adjust_note TEXT NOT NULL DEFAULT '',
+        wish_id INTEGER REFERENCES wishes(id) ON DELETE SET NULL,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+      INSERT INTO prints_new (id, person_id, title, printed_at, adjust_cents, adjust_note, wish_id, created_at)
+        SELECT id, person_id, title, printed_at, adjust_cents, adjust_note, wish_id, created_at FROM prints;
+      DROP TABLE prints;
+      ALTER TABLE prints_new RENAME TO prints;
+    `);
+    if (snapshot('prints') !== before) throw new Error('prints changed during the conversion');
+    if (db.prepare('PRAGMA foreign_key_check').all().length) throw new Error('broken links after the conversion');
+    db.exec('COMMIT');
+    console.log('Database upgraded: a print can now belong to the owner.');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    console.error(`Could not upgrade the prints table, not starting: ${e.message}`);
+    process.exit(1);
+  }
+  db.exec('PRAGMA foreign_keys = ON');
 }
 
 function tx(fn) {
@@ -280,7 +325,7 @@ const BALANCE_SQL = `
 function listPrints(where = '', ...args) {
   const prints = db.prepare(
     `SELECT p.id, p.person_id, pe.name AS person_name, p.title, p.printed_at, p.adjust_cents, p.adjust_note
-     FROM prints p JOIN people pe ON pe.id = p.person_id ${where} ORDER BY p.printed_at DESC, p.id DESC`
+     FROM prints p LEFT JOIN people pe ON pe.id = p.person_id ${where} ORDER BY p.printed_at DESC, p.id DESC`
   ).all(...args);
   // color_hex is only there to draw a colour dot; it is null once the spool is deleted.
   const lines = db.prepare(
@@ -342,15 +387,17 @@ function setSetting(key, value) {
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, JSON.stringify(value));
 }
 
-// Must run inside tx(): bills a print to a person and takes its filament out of the spools.
+// Must run inside tx(): takes a print's filament out of the spools and bills it to a person,
+// or to nobody when the owner made it for themselves (no person_id).
 function createPrint(body) {
-  const person = mustExist('people', int(body.person_id, 1, Number.MAX_SAFE_INTEGER, 'Person'));
+  const person = body.person_id == null ? null : mustExist('people', int(body.person_id, 1, Number.MAX_SAFE_INTEGER, 'Person'));
   const title = str(body.title, 120, 'Title');
-  const adjust = body.adjust_cents ? int(body.adjust_cents, -10000000, 10000000, 'Adjustment') : 0;
+  // an adjustment is a billing matter: it means nothing on a print nobody pays for
+  const adjust = person && body.adjust_cents ? int(body.adjust_cents, -10000000, 10000000, 'Adjustment') : 0;
   const lines = Array.isArray(body.lines) ? body.lines.slice(0, 32) : [];
-  if (!lines.length && !adjust) throw bad('Add at least one filament or an adjustment');
+  if (!lines.length && !adjust) throw bad(person ? 'Add at least one filament or an adjustment' : 'Add at least one filament');
   let wishId = null;
-  if (body.wish_id) {
+  if (person && body.wish_id) {
     const wish = db.prepare('SELECT id FROM wishes WHERE id = ? AND person_id = ?').get(Number(body.wish_id) || 0, person.id);
     if (wish) {
       wishId = wish.id;
@@ -359,7 +406,7 @@ function createPrint(body) {
   }
   const id = db.prepare(
     'INSERT INTO prints (person_id, title, printed_at, adjust_cents, adjust_note, wish_id) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(person.id, title, day(body.printed_at), adjust, str(body.adjust_note, 200), wishId).lastInsertRowid;
+  ).run(person?.id ?? null, title, day(body.printed_at), adjust, person ? str(body.adjust_note, 200) : '', wishId).lastInsertRowid;
   for (const line of lines) {
     const spool = mustExist('spools', int(line?.spool_id, 1, Number.MAX_SAFE_INTEGER, 'Spool'));
     const grams = num(line.grams, 0.01, 100000, 'Grams');

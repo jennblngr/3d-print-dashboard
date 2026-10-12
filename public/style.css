@@ -164,6 +164,7 @@ dialog .spool { background: color-mix(in oklab, var(--c) 11%, var(--sunk)); }
 /* people */
 .app .avatar { flex: none; display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--a, var(--p-lav)); color: #141418; font-size: 18px; font-weight: 700; }
 .app .person .row { align-items: center; }
+.app .me .grow > strong { display: block; font-size: 19px; font-weight: 700; }
 .app .person .row > strong { font-size: 19px; font-weight: 700; }
 .app .person .lines { margin-top: 4px; }
 .app .person .bar button { flex: 1 1 auto; }

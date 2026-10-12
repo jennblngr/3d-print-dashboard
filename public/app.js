@@ -88,7 +88,7 @@ function openDialog(title, bodyHtml, onSubmit, { submitLabel = t('save'), subtit
     ${bodyHtml}
     <p class="err" hidden></p>
     <menu>
-      <button type="button" data-act="closeDlg">${t('cancel')}</button>
+      <button type="button" data-act="closeDlg">${t(onSubmit ? 'cancel' : 'close')}</button>
       ${onSubmit ? `<button class="primary">${h(submitLabel)}</button>` : ''}
     </menu>
   </form>`;
@@ -162,12 +162,16 @@ function lineDot(l) {
   return hex ? `<i class="dot" style="--c:${h(hex)}"></i>` : '';
 }
 
+// A print without a person is one the owner made for themselves: it is billed to nobody.
+const isMine = p => p.person_id == null;
+const printOwner = p => (isMine(p) ? `${t('me')} · ${t('notBilledTag')}` : h(p.person_name));
+
 function printCard(p, admin) {
   const lines = p.lines.map(l => `<li><span>${lineDot(l)}${h(l.label)} · ${+l.grams.toFixed(2)} g</span><span>${eur(l.cost_cents)}</span></li>`);
   if (p.adjust_cents) lines.push(`<li class="adj"><span>${h(p.adjust_note || t('adjustment'))}</span><span>${eur(p.adjust_cents)}</span></li>`);
   return `<article class="card col print">
     <div class="row">
-      <div class="grow"><strong>${h(p.title)}</strong><small>${showDate(p.printed_at)}${admin ? ' · ' + h(p.person_name) : ''}</small></div>
+      <div class="grow"><strong>${h(p.title)}</strong><small>${showDate(p.printed_at)}${admin ? ' · ' + printOwner(p) : ''}</small></div>
       <strong class="amount">${eur(p.total_cents)}</strong>
     </div>
     <ul class="lines">${lines.join('')}</ul>
@@ -272,7 +276,13 @@ const views = {
         </details>
       </article>`;
     });
-    return `<div class="bar"><button class="primary" data-act="person">${icons.plus}${t('add')}</button></div>${cards.join('') || empty('spool')}`;
+    const mine = state.prints.filter(isMine);
+    const me = `<button type="button" class="card me" data-act="me">
+      <span class="avatar" style="--a: var(--p-mist)" aria-hidden="true">${h(Array.from(t('me'))[0])}</span>
+      <span class="grow"><strong>${t('me')}</strong><small>${t('printCount', { count: mine.length })} · ${t('notBilledTag')}</small></span>
+      <strong class="amount">${eur(mine.reduce((sum, p) => sum + p.total_cents, 0))}</strong>
+    </button>`;
+    return `<div class="bar"><button class="primary" data-act="person">${icons.plus}${t('add')}</button></div>${me}${cards.join('') || empty('spool')}`;
   },
   wishes() {
     const order = ['requested', 'accepted', 'printed', 'declined'];
@@ -479,7 +489,6 @@ async function scanDialog() {
 }
 
 function printDialog(pre = {}) {
-  if (!state.people.length) return toast(t('needPerson'));
   const spools = activeSpools();
   const options = spoolOptions(spools, pre.spool_id);
   lineRow = () => `<div class="line">
@@ -489,19 +498,22 @@ function printDialog(pre = {}) {
   </div>`;
   const body = `
     <label>${t('person')}<select name="person_id">${state.people.map(p =>
-      `<option value="${p.id}" ${p.id === pre.person_id ? 'selected' : ''}>${h(p.name)}</option>`).join('')}</select></label>
+      `<option value="${p.id}" ${p.id === pre.person_id ? 'selected' : ''}>${h(p.name)}</option>`).join('')}
+      <option value="">${t('me')}</option></select></label>
     ${field('title', t('title'), pre.title || '', 'required maxlength="120"')}
     ${field('printed_at', t('date'), pre.printed_at || today(), 'type="date" required')}
     <fieldset><legend>${t('filament')}</legend>
       <div id="lines">${spools.length ? lineRow() : ''}</div>
       ${spools.length ? `<button type="button" class="ghost" data-act="addLine">${t('addFilament')}</button>` : ''}
     </fieldset>
-    ${field('adjust', t('adjust'), '', 'inputmode="decimal"')}
-    ${field('adjust_note', t('adjustNote'), '', 'maxlength="200"')}
+    <div id="billing">
+      ${field('adjust', t('adjust'), '', 'inputmode="decimal"')}
+      ${field('adjust_note', t('adjustNote'), '', 'maxlength="200"')}
+    </div>
     <p class="total" id="total"></p>`;
   openDialog(t('newPrint'), body, async (fd, form) => {
     await api('POST', pre.bambu_id ? `/api/bambu/prints/${pre.bambu_id}/bill` : '/api/prints', {
-      person_id: +fd.get('person_id'),
+      person_id: fd.get('person_id') ? +fd.get('person_id') : null,
       title: fd.get('title'),
       printed_at: fd.get('printed_at'),
       adjust_cents: toCents(fd.get('adjust')),
@@ -545,7 +557,10 @@ function bambuConnectDialog() {
 function printTotal() {
   const out = $('#total', dlg);
   if (!out) return;
-  let cents = toCents($('[name=adjust]', dlg).value);
+  // a print for the owner is billed to nobody: no adjustment to apply
+  const mine = !$('[name=person_id]', dlg).value;
+  $('#billing', dlg).hidden = mine;
+  let cents = mine ? 0 : toCents($('[name=adjust]', dlg).value);
   for (const row of dlg.querySelectorAll('.line')) {
     const spool = state.spools.find(s => s.id === +$('select', row).value);
     if (spool) cents += Math.round(((parseFloat($('input', row).value) || 0) * spool.price_cents) / spool.weight_g);
@@ -660,6 +675,12 @@ const actions = {
     if (!confirm(t('confirmNewLink'))) return;
     await api('POST', `/api/people/${id}/token`);
     await refresh();
+  },
+  me() {
+    const mine = state.prints.filter(isMine);
+    const total = mine.reduce((sum, p) => sum + p.total_cents, 0);
+    openDialog(t('me'), `<p class="total"><span>${t('filamentCost')}</span><span>${eur(total)}</span></p>
+      ${mine.map(p => printCard(p, true)).join('') || `<p class="hint">${t('empty')}</p>`}`, null, { subtitle: t('myPrints') });
   },
   async delPerson(id) {
     if (!confirm(t('confirmDeletePerson'))) return;
