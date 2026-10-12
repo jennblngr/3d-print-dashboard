@@ -90,7 +90,14 @@ d'elles est violée, préviens-moi immédiatement.
 ## Conventions et décisions prises
 - Aucune dépendance et aucune étape de build : Node 24 et sa base SQLite
   intégrée, interface en JavaScript simple.
-- Hébergement sur mon VPS, avec Docker et Caddy pour le HTTPS.
+- Hébergement sur mon VPS, dans `/var/www/3d-print-dashboard`, avec Docker.
+  Le serveur héberge d'autres projets : l'application n'écoute que sur le
+  serveur lui-même (port 3020) et c'est le Nginx déjà en place, avec certbot,
+  qui la publie en HTTPS sur `3d-print-dashboard.jennblngr.com`. Ne jamais
+  toucher aux fichiers ni aux conteneurs des autres projets du serveur.
+- Sur le VPS, tu n'as pas d'accès direct : donne-moi les commandes en blocs à
+  copier, une étape à la fois, en précisant l'utilisateur (`ubuntu` pour tout
+  ce qui demande `sudo` ou Docker), et je te colle le résultat.
 - Le mot de passe du propriétaire n'est jamais enregistré : seule son empreinte
   l'est. On le définit ou on le change avec la commande `npm run set-password`.
 - Limites de fréquence par visiteur : 300 requêtes par minute, dont 60
