@@ -16,15 +16,29 @@ npm start              # http://localhost:3000
 
 ## Deploy on a VPS
 
-Point a domain's DNS record at the VPS, install Docker, then:
+The VPS already runs nginx for other sites, so the app ships no reverse proxy of its own: its container listens on
+`127.0.0.1:3020` only, and the host's nginx forwards `3d-print-dashboard.jennblngr.com` to it over HTTPS (certbot).
+HTTPS is required by the camera, NFC and "install app" features.
 
 ```sh
-cp .env.example .env   # set DOMAIN
-# add the ADMIN_PASSWORD_HASH line: copy it from the .env made by "npm run set-password" on your own machine
-docker compose up -d --build
+# 1. code
+sudo git clone https://github.com/jennblngr/3d-print-dashboard.git /var/www/3d-print-dashboard
+cd /var/www/3d-print-dashboard
+
+# 2. owner password: asks for it and writes only its hash to .env
+sudo docker run --rm -it -v "$PWD":/app -w /app node:24-alpine node scripts/set-password.js
+
+# 3. app
+sudo docker compose up -d --build
+
+# 4. nginx + HTTPS
+sudo cp nginx/3d-print-dashboard.conf /etc/nginx/sites-available/3d-print-dashboard.jennblngr.com
+sudo ln -s /etc/nginx/sites-available/3d-print-dashboard.jennblngr.com /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d 3d-print-dashboard.jennblngr.com
 ```
 
-Caddy serves the app over HTTPS, which the camera, NFC and "install app" features require.
+To update later: `sudo git pull && sudo docker compose up -d --build` (a backup is taken at each start).
 
 ## Backups
 
@@ -35,7 +49,7 @@ the last 14 days are kept. The owner's screen shows the date of the last one.
 These backups live on the same machine as the data. To survive the loss of the server, copy them elsewhere regularly:
 
 ```sh
-docker compose cp app:/data/backups ./backups
+sudo docker compose cp app:/data/backups ./backups
 ```
 
 To restore:
@@ -46,9 +60,9 @@ npm run restore                 # lists the backups
 npm run restore -- <name>       # puts one back; the replaced database is kept as before-restore-<date>.db
 
 # on the VPS
-docker compose stop app
-docker compose run --rm app node scripts/restore-backup.js <name>
-docker compose start app
+sudo docker compose stop app
+sudo docker compose run --rm app node scripts/restore-backup.js <name>
+sudo docker compose start app
 ```
 
 ## Security

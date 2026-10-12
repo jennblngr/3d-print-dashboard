@@ -3,25 +3,14 @@ services:
     build: .
     restart: unless-stopped
     environment:
-      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?run "npm run set-password" to create it in .env}
+      ADMIN_PASSWORD_HASH: ${ADMIN_PASSWORD_HASH:?missing from .env - see README}
       SECURE_COOKIES: "true"
       TRUST_PROXY: "true"
+    # Reachable from the server itself only: the host's nginx forwards the public traffic here.
+    ports:
+      - "127.0.0.1:3020:3000"
     volumes:
       - data:/data
 
-  # Caddy fetches and renews the HTTPS certificate for DOMAIN on its own.
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports:
-      - "80:80"
-      - "443:443"
-    environment:
-      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-
 volumes:
   data:
-  caddy_data:
