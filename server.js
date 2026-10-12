@@ -282,7 +282,11 @@ function listPrints(where = '', ...args) {
     `SELECT p.id, p.person_id, pe.name AS person_name, p.title, p.printed_at, p.adjust_cents, p.adjust_note
      FROM prints p JOIN people pe ON pe.id = p.person_id ${where} ORDER BY p.printed_at DESC, p.id DESC`
   ).all(...args);
-  const lines = db.prepare('SELECT label, grams, cost_cents FROM print_lines WHERE print_id = ? ORDER BY id');
+  // color_hex is only there to draw a colour dot; it is null once the spool is deleted.
+  const lines = db.prepare(
+    `SELECT l.label, l.grams, l.cost_cents, s.color_hex
+     FROM print_lines l LEFT JOIN spools s ON s.id = l.spool_id WHERE l.print_id = ? ORDER BY l.id`
+  );
   for (const p of prints) {
     p.lines = lines.all(p.id);
     p.total_cents = p.lines.reduce((sum, l) => sum + l.cost_cents, 0) + p.adjust_cents;
