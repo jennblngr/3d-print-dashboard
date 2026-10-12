@@ -61,7 +61,9 @@ clé d'accès).
 - supprimer des données, des fichiers, ou faire une action irréversible ;
 - modifier la structure de la base d'une façon qui pourrait perdre des données ;
 - déployer en production ;
-- ajouter un service externe ou une dépendance.
+- ajouter un service externe ou une dépendance ;
+- agir sur GitHub ailleurs que dans le dépôt de ce projet
+  (`jennblngr/3d-print-dashboard`), même si l'accès configuré le permet.
 Dans ces cas : explique-moi le risque en langage simple, propose, et attends
 que je valide.
 
@@ -80,17 +82,22 @@ d'elles est violée, préviens-moi immédiatement.
    données de test, pas de compte de démo).
 
 Écarts connus à corriger (constatés le 12/10/2026) :
-- Règle 2 : le mot de passe du propriétaire est écrit en clair dans le fichier
-  de configuration du serveur.
-- Règle 6 : seule la connexion a une limite de fréquence ; les demandes de
-  souhaits sont plafonnées à 30 en attente, le reste n'a pas de limite.
-- Règle 7 : aucune sauvegarde automatique, aucune restauration testée.
+- Règle 7 : sauvegardes automatiques en place et restauration testée sur le Mac,
+  mais pas encore sur le VPS ; aucune copie hors du serveur (si le VPS est
+  perdu, les sauvegardes le sont aussi).
 - Règle 1 : prévue sur le VPS, pas encore vérifiée en conditions réelles.
 
 ## Conventions et décisions prises
 - Aucune dépendance et aucune étape de build : Node 24 et sa base SQLite
   intégrée, interface en JavaScript simple.
 - Hébergement sur mon VPS, avec Docker et Caddy pour le HTTPS.
+- Le mot de passe du propriétaire n'est jamais enregistré : seule son empreinte
+  l'est. On le définit ou on le change avec la commande `npm run set-password`.
+- Limites de fréquence par visiteur : 300 requêtes par minute, dont 60
+  modifications ; 10 mots de passe faux bloquent la connexion 15 minutes.
+- Sauvegardes automatiques de la base à chaque démarrage et une fois par jour,
+  vérifiées, conservées 14 jours sur le serveur. Restauration avec
+  `npm run restore` ; la base remplacée est toujours gardée de côté.
 - Les proches n'ont pas de compte : un lien d'invitation privé par personne,
   remplaçable par le propriétaire.
 - Les montants sont stockés en centimes. Le coût d'une impression est figé au
