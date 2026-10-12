@@ -165,13 +165,19 @@ function lineDot(l) {
 // A print without a person is one the owner made for themselves: it is billed to nobody.
 const isMine = p => p.person_id == null;
 const printOwner = p => (isMine(p) ? `${t('me')} · ${t('notBilledTag')}` : h(p.person_name));
+// The owner sees who shares a print; a guest only sees in how many parts it was split.
+function printSharing(p) {
+  if (p.share_count < 2) return '';
+  if (!p.shared_with) return ` · ${t('sharedCount', { count: p.share_count })}`;
+  return ` · ${t('sharedWith', { names: p.shared_with.map(name => h(name ?? t('me'))).join(', ') })}`;
+}
 
 function printCard(p, admin) {
   const lines = p.lines.map(l => `<li><span>${lineDot(l)}${h(l.label)} · ${+l.grams.toFixed(2)} g</span><span>${eur(l.cost_cents)}</span></li>`);
   if (p.adjust_cents) lines.push(`<li class="adj"><span>${h(p.adjust_note || t('adjustment'))}</span><span>${eur(p.adjust_cents)}</span></li>`);
   return `<article class="card col print">
     <div class="row">
-      <div class="grow"><strong>${h(p.title)}</strong><small>${showDate(p.printed_at)}${admin ? ' · ' + printOwner(p) : ''}</small></div>
+      <div class="grow"><strong>${h(p.title)}</strong><small>${showDate(p.printed_at)}${admin ? ' · ' + printOwner(p) : ''}${printSharing(p)}</small></div>
       <strong class="amount">${eur(p.total_cents)}</strong>
     </div>
     <ul class="lines">${lines.join('')}</ul>
@@ -497,9 +503,11 @@ function printDialog(pre = {}) {
     <button type="button" class="icon" data-act="rmLine" aria-label="${t('delete')}">${icons.close}</button>
   </div>`;
   const body = `
-    <label>${t('person')}<select name="person_id">${state.people.map(p =>
-      `<option value="${p.id}" ${p.id === pre.person_id ? 'selected' : ''}>${h(p.name)}</option>`).join('')}
-      <option value="">${t('me')}</option></select></label>
+    <fieldset><legend>${t('forWhom')}</legend>
+      ${state.people.map(p =>
+        `<label class="check"><input type="checkbox" name="person" value="${p.id}" ${p.id === pre.person_id ? 'checked' : ''}>${h(p.name)}</label>`).join('')}
+      <label class="check"><input type="checkbox" name="person" value="">${t('me')}</label>
+    </fieldset>
     ${field('title', t('title'), pre.title || '', 'required maxlength="120"')}
     ${field('printed_at', t('date'), pre.printed_at || today(), 'type="date" required')}
     <fieldset><legend>${t('filament')}</legend>
@@ -510,10 +518,14 @@ function printDialog(pre = {}) {
       ${field('adjust', t('adjust'), '', 'inputmode="decimal"')}
       ${field('adjust_note', t('adjustNote'), '', 'maxlength="200"')}
     </div>
-    <p class="total" id="total"></p>`;
+    <p class="total" id="total"></p>
+    <p class="hint" id="split" hidden></p>`;
   openDialog(t('newPrint'), body, async (fd, form) => {
+    // an empty value is the owner's own part
+    const people = fd.getAll('person').map(v => (v ? +v : null));
+    if (!people.length) throw new Error(t('pickPerson'));
     await api('POST', pre.bambu_id ? `/api/bambu/prints/${pre.bambu_id}/bill` : '/api/prints', {
-      person_id: fd.get('person_id') ? +fd.get('person_id') : null,
+      person_ids: people,
       title: fd.get('title'),
       printed_at: fd.get('printed_at'),
       adjust_cents: toCents(fd.get('adjust')),
@@ -557,15 +569,26 @@ function bambuConnectDialog() {
 function printTotal() {
   const out = $('#total', dlg);
   if (!out) return;
-  // a print for the owner is billed to nobody: no adjustment to apply
-  const mine = !$('[name=person_id]', dlg).value;
-  $('#billing', dlg).hidden = mine;
-  let cents = mine ? 0 : toCents($('[name=adjust]', dlg).value);
+  const picked = [...dlg.querySelectorAll('[name=person]:checked')];
+  const parts = Math.max(1, picked.length);
+  // the owner's own part is billed to nobody: with nobody else, there is no adjustment to apply
+  const billed = !picked.length || picked.some(box => box.value);
+  $('#billing', dlg).hidden = !billed;
+  const adjust = billed ? toCents($('[name=adjust]', dlg).value) : 0;
+  // same sums as the server: each person's part is rounded on its own
+  let cents = adjust;
+  let part = Math.round(adjust / parts);
   for (const row of dlg.querySelectorAll('.line')) {
     const spool = state.spools.find(s => s.id === +$('select', row).value);
-    if (spool) cents += Math.round(((parseFloat($('input', row).value) || 0) * spool.price_cents) / spool.weight_g);
+    if (!spool) continue;
+    const grams = parseFloat($('input', row).value) || 0;
+    cents += Math.round((grams * spool.price_cents) / spool.weight_g);
+    part += Math.round(((grams / parts) * spool.price_cents) / spool.weight_g);
   }
   out.innerHTML = `<span>${t('total')}</span><span>${eur(cents)}</span>`;
+  const split = $('#split', dlg);
+  split.hidden = parts < 2;
+  split.textContent = t('splitHint', { count: parts, amount: eur(part) });
 }
 
 // ---------- guest area ----------
@@ -590,8 +613,8 @@ function renderGuest() {
 
 // ---------- actions ----------
 
-const remove = async url => {
-  if (!confirm(t('confirmDelete'))) return;
+const remove = async (url, question = 'confirmDelete') => {
+  if (!confirm(t(question))) return;
   await api('DELETE', url);
   closeDialog();
   await refresh();
@@ -614,7 +637,7 @@ const actions = {
   delSpool: id => remove(`/api/spools/${id}`),
   scan: scanDialog,
   print: () => printDialog(),
-  delPrint: id => remove(`/api/prints/${id}`),
+  delPrint: id => remove(`/api/prints/${id}`, state.prints.find(p => p.id === id)?.share_count > 1 ? 'confirmDeleteShared' : 'confirmDelete'),
   bambuBill(id) {
     const b = state.bambu_prints.find(x => x.id === id);
     printDialog({ title: b.title, grams: b.suggested_g, printed_at: localDay(b.ended_at), spool_id: state.last_spool_id, bambu_id: b.id });

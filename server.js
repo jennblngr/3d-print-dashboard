@@ -106,7 +106,9 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'requested',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
-  -- person_id is NULL for a print the owner made for themselves: stock moves, nobody is billed
+  -- person_id is NULL for a print the owner made for themselves: stock moves, nobody is billed.
+  -- A print shared between several people is stored as one print per person, each holding
+  -- that person's part of the filament; group_id (the id of the first one) ties them together.
   CREATE TABLE IF NOT EXISTS prints (
     id INTEGER PRIMARY KEY,
     person_id INTEGER REFERENCES people(id) ON DELETE CASCADE,
@@ -115,7 +117,8 @@ db.exec(`
     adjust_cents INTEGER NOT NULL DEFAULT 0,
     adjust_note TEXT NOT NULL DEFAULT '',
     wish_id INTEGER REFERENCES wishes(id) ON DELETE SET NULL,
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    group_id INTEGER
   );
   -- label and cost are snapshots: they stay correct if the spool is edited or deleted later
   CREATE TABLE IF NOT EXISTS print_lines (
@@ -218,6 +221,10 @@ if (db.prepare('PRAGMA table_info(prints)').all().some(c => c.name === 'person_i
     process.exit(1);
   }
   db.exec('PRAGMA foreign_keys = ON');
+}
+// Databases created before a print could be shared between several people.
+if (!db.prepare('PRAGMA table_info(prints)').all().some(c => c.name === 'group_id')) {
+  db.exec('ALTER TABLE prints ADD COLUMN group_id INTEGER');
 }
 
 function tx(fn) {
@@ -322,11 +329,17 @@ const BALANCE_SQL = `
   + COALESCE((SELECT SUM(adjust_cents) FROM prints WHERE person_id = pe.id), 0)
   - COALESCE((SELECT SUM(amount_cents) FROM payments WHERE person_id = pe.id), 0)`;
 
-function listPrints(where = '', ...args) {
+// `guestId` limits the list to one person's prints and leaves out who else shares them:
+// a guest learns that a print is shared, never with whom.
+function listPrints(guestId) {
   const prints = db.prepare(
-    `SELECT p.id, p.person_id, pe.name AS person_name, p.title, p.printed_at, p.adjust_cents, p.adjust_note
-     FROM prints p LEFT JOIN people pe ON pe.id = p.person_id ${where} ORDER BY p.printed_at DESC, p.id DESC`
-  ).all(...args);
+    `SELECT p.id, p.person_id, pe.name AS person_name, p.title, p.printed_at, p.adjust_cents, p.adjust_note, p.group_id
+     FROM prints p LEFT JOIN people pe ON pe.id = p.person_id ${guestId ? 'WHERE p.person_id = ?' : ''}
+     ORDER BY p.printed_at DESC, p.id DESC`
+  ).all(...(guestId ? [guestId] : []));
+  const others = db.prepare(
+    'SELECT pe.name FROM prints g LEFT JOIN people pe ON pe.id = g.person_id WHERE g.group_id = ? AND g.id != ? ORDER BY g.id'
+  );
   // color_hex is only there to draw a colour dot; it is null once the spool is deleted.
   const lines = db.prepare(
     `SELECT l.label, l.grams, l.cost_cents, s.color_hex
@@ -335,6 +348,11 @@ function listPrints(where = '', ...args) {
   for (const p of prints) {
     p.lines = lines.all(p.id);
     p.total_cents = p.lines.reduce((sum, l) => sum + l.cost_cents, 0) + p.adjust_cents;
+    const shared = p.group_id ? others.all(p.group_id, p.id) : [];
+    p.share_count = shared.length + 1;
+    // a null name is the owner's own part
+    if (!guestId) p.shared_with = shared.map(o => o.name);
+    delete p.group_id;
   }
   return prints;
 }
@@ -387,36 +405,59 @@ function setSetting(key, value) {
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, JSON.stringify(value));
 }
 
-// Must run inside tx(): takes a print's filament out of the spools and bills it to a person,
-// or to nobody when the owner made it for themselves (no person_id).
+// Must run inside tx(): takes a print's filament out of the spools and bills it.
+// `person_ids` lists who it is for; null stands for the owner, whose part is billed to nobody.
+// Several people share a print in equal parts: each gets a print of their own holding their
+// part of the filament and of the adjustment, so every amount is computed as for any print.
 function createPrint(body) {
-  const person = body.person_id == null ? null : mustExist('people', int(body.person_id, 1, Number.MAX_SAFE_INTEGER, 'Person'));
+  const asked = Array.isArray(body.person_ids) ? body.person_ids.slice(0, 50) : [body.person_id];
+  const ids = [...new Set(asked.map(v => {
+    if (v === undefined) throw bad('Person is required');
+    return v === null ? null : int(v, 1, Number.MAX_SAFE_INTEGER, 'Person');
+  }))];
+  if (!ids.length) throw bad('Person is required');
+  const people = ids.map(id => (id === null ? null : mustExist('people', id)));
+  const parts = people.length;
   const title = str(body.title, 120, 'Title');
-  // an adjustment is a billing matter: it means nothing on a print nobody pays for
-  const adjust = person && body.adjust_cents ? int(body.adjust_cents, -10000000, 10000000, 'Adjustment') : 0;
-  const lines = Array.isArray(body.lines) ? body.lines.slice(0, 32) : [];
-  if (!lines.length && !adjust) throw bad(person ? 'Add at least one filament or an adjustment' : 'Add at least one filament');
-  let wishId = null;
-  if (person && body.wish_id) {
-    const wish = db.prepare('SELECT id FROM wishes WHERE id = ? AND person_id = ?').get(Number(body.wish_id) || 0, person.id);
-    if (wish) {
-      wishId = wish.id;
-      db.prepare("UPDATE wishes SET status = 'printed' WHERE id = ?").run(wishId);
+  const printedAt = day(body.printed_at);
+  // an adjustment is a billing matter: it means nothing on a part nobody pays for
+  const billed = people.some(Boolean);
+  const adjust = billed && body.adjust_cents ? int(body.adjust_cents, -10000000, 10000000, 'Adjustment') : 0;
+  const note = str(body.adjust_note, 200);
+  const lines = (Array.isArray(body.lines) ? body.lines.slice(0, 32) : []).map(line => ({
+    spool: mustExist('spools', int(line?.spool_id, 1, Number.MAX_SAFE_INTEGER, 'Spool')),
+    grams: num(line.grams, 0.01, 100000, 'Grams') / parts,
+  }));
+  if (!lines.length && !adjust) throw bad(billed ? 'Add at least one filament or an adjustment' : 'Add at least one filament');
+
+  let firstId = null;
+  let groupId = null;
+  for (const person of people) {
+    let wishId = null;
+    if (person && body.wish_id) {
+      const wish = db.prepare('SELECT id FROM wishes WHERE id = ? AND person_id = ?').get(Number(body.wish_id) || 0, person.id);
+      if (wish) {
+        wishId = wish.id;
+        db.prepare("UPDATE wishes SET status = 'printed' WHERE id = ?").run(wishId);
+      }
     }
+    const id = db.prepare(
+      'INSERT INTO prints (person_id, title, printed_at, adjust_cents, adjust_note, wish_id, group_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    ).run(person?.id ?? null, title, printedAt, person ? Math.round(adjust / parts) : 0, person ? note : '', wishId, groupId).lastInsertRowid;
+    if (parts > 1 && groupId === null) {
+      groupId = id;
+      db.prepare('UPDATE prints SET group_id = ? WHERE id = ?').run(groupId, id);
+    }
+    for (const { spool, grams } of lines) {
+      const cost = Math.round((grams * spool.price_cents) / spool.weight_g);
+      const label = [spool.brand, spool.material, spool.variant, spool.color_name].filter(Boolean).join(' ');
+      db.prepare('INSERT INTO print_lines (print_id, spool_id, label, grams, cost_cents) VALUES (?, ?, ?, ?, ?)').run(id, spool.id, label, grams, cost);
+      db.prepare('UPDATE spools SET remaining_g = MAX(0, remaining_g - ?) WHERE id = ?').run(grams, spool.id);
+      setSetting('last_spool_id', spool.id);
+    }
+    firstId ??= id;
   }
-  const id = db.prepare(
-    'INSERT INTO prints (person_id, title, printed_at, adjust_cents, adjust_note, wish_id) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(person?.id ?? null, title, day(body.printed_at), adjust, person ? str(body.adjust_note, 200) : '', wishId).lastInsertRowid;
-  for (const line of lines) {
-    const spool = mustExist('spools', int(line?.spool_id, 1, Number.MAX_SAFE_INTEGER, 'Spool'));
-    const grams = num(line.grams, 0.01, 100000, 'Grams');
-    const cost = Math.round((grams * spool.price_cents) / spool.weight_g);
-    const label = [spool.brand, spool.material, spool.variant, spool.color_name].filter(Boolean).join(' ');
-    db.prepare('INSERT INTO print_lines (print_id, spool_id, label, grams, cost_cents) VALUES (?, ?, ?, ?, ?)').run(id, spool.id, label, grams, cost);
-    db.prepare('UPDATE spools SET remaining_g = MAX(0, remaining_g - ?) WHERE id = ?').run(grams, spool.id);
-    setSetting('last_spool_id', spool.id);
-  }
-  return { id };
+  return { id: firstId };
 }
 
 // ---------- Bambu Lab account ----------
@@ -558,13 +599,18 @@ route('DELETE', '/api/people/:id', 'admin', ({ params }) => {
 route('POST', '/api/prints', 'admin', ({ body }) => tx(() => createPrint(body)));
 route('DELETE', '/api/prints/:id', 'admin', ({ params }) =>
   tx(() => {
-    // give the filament back to the spools that still exist
-    for (const l of db.prepare('SELECT spool_id, grams FROM print_lines WHERE print_id = ? AND spool_id IS NOT NULL').all(params.id)) {
-      db.prepare('UPDATE spools SET remaining_g = remaining_g + ? WHERE id = ?').run(l.grams, l.spool_id);
+    // a shared print goes as a whole: every person's part with it
+    const groupId = db.prepare('SELECT group_id FROM prints WHERE id = ?').get(params.id)?.group_id;
+    const ids = groupId ? db.prepare('SELECT id FROM prints WHERE group_id = ?').all(groupId).map(r => r.id) : [params.id];
+    for (const id of ids) {
+      // give the filament back to the spools that still exist
+      for (const l of db.prepare('SELECT spool_id, grams FROM print_lines WHERE print_id = ? AND spool_id IS NOT NULL').all(id)) {
+        db.prepare('UPDATE spools SET remaining_g = remaining_g + ? WHERE id = ?').run(l.grams, l.spool_id);
+      }
+      // a print that came from the Bambu account goes back to the ones waiting to be assigned
+      db.prepare("UPDATE bambu_prints SET state = 'pending', print_id = NULL WHERE print_id = ?").run(id);
+      db.prepare('DELETE FROM prints WHERE id = ?').run(id);
     }
-    // a print that came from the Bambu account goes back to the ones waiting to be assigned
-    db.prepare("UPDATE bambu_prints SET state = 'pending', print_id = NULL WHERE print_id = ?").run(params.id);
-    db.prepare('DELETE FROM prints WHERE id = ?').run(params.id);
     return { ok: true };
   })
 );
@@ -662,7 +708,7 @@ route('DELETE', '/api/wishes/:id', 'admin', ({ params }) => {
 route('GET', '/api/my', 'guest', ({ person }) => ({
   person: { name: person.name },
   balance_cents: db.prepare(`SELECT ${BALANCE_SQL} AS b FROM people pe WHERE pe.id = ?`).get(person.id).b,
-  prints: listPrints('WHERE p.person_id = ?', person.id),
+  prints: listPrints(person.id),
   payments: db.prepare('SELECT id, amount_cents, paid_at, note FROM payments WHERE person_id = ? ORDER BY paid_at DESC, id DESC').all(person.id),
   wishes: db.prepare('SELECT id, title, url, note, status, created_at FROM wishes WHERE person_id = ? ORDER BY id DESC').all(person.id),
 }));

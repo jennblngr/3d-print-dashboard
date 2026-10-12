@@ -125,6 +125,10 @@ d'elles est violée, préviens-moi immédiatement.
   personnes) : le stock baisse, personne n'est facturé, et son coût en filament
   s'additionne dans la ligne « Moi » de l'onglet Personnes. « Moi » n'est pas
   une personne : ni lien d'invitation, ni solde, ni paiement.
+- Une impression peut être partagée entre plusieurs personnes (cases à cocher,
+  « Moi » compris), toujours à parts égales : chacun reçoit sa part du filament
+  et du coût, le stock baisse une seule fois du total. La supprimer la supprime
+  pour tout le monde. Un proche voit que c'est partagé, jamais avec qui.
 - Le code-barres désigne un produit (partagé par plusieurs bobines) ; le tag
   RFID désigne une seule bobine.
 - Tags TigerTag : un navigateur ne peut pas les lire (format brut, pas NDEF).
