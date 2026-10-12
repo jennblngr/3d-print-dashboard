@@ -41,6 +41,9 @@
   à chaque tâche terminée. Je n'en écrirai jamais un moi-même.
 - AVANT chaque commit, demande-moi si je veux y inclure autre chose ou si on en
   reste là.
+- Chaque envoi sur `main` met le site en ligne automatiquement (voir
+  `.github/workflows/deploy.yml`) : pousser équivaut à déployer en production.
+  Ne pousse donc jamais sans mon accord.
 - Les commits sont signés avec mon adresse `jennblngr@gmail.com` (réglée pour ce
   dépôt uniquement). N'ajoute jamais de mention « Co-Authored-By: Claude » ni
   de signature d'outil dans les commits ou les pull requests.
@@ -64,6 +67,12 @@ clé d'accès).
 - ajouter un service externe ou une dépendance ;
 - agir sur GitHub ailleurs que dans le dépôt de ce projet
   (`jennblngr/3d-print-dashboard`), même si l'accès configuré le permet.
+
+Interdits, même si c'est techniquement possible :
+- modifier ou pousser toi-même les fichiers d'automatisation GitHub
+  (`.github/workflows/`) : prépare le changement dans un commit, c'est moi
+  qui le pousse ;
+- utiliser ma clé SSH, ou tout accès autre que celui prévu pour toi.
 Dans ces cas : explique-moi le risque en langage simple, propose, et attends
 que je valide.
 
