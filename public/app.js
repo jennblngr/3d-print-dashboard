@@ -163,7 +163,7 @@ function lineDot(l) {
 }
 
 function printCard(p, admin) {
-  const lines = p.lines.map(l => `<li><span>${lineDot(l)}${h(l.label)} · ${+l.grams.toFixed(1)} g</span><span>${eur(l.cost_cents)}</span></li>`);
+  const lines = p.lines.map(l => `<li><span>${lineDot(l)}${h(l.label)} · ${+l.grams.toFixed(2)} g</span><span>${eur(l.cost_cents)}</span></li>`);
   if (p.adjust_cents) lines.push(`<li class="adj"><span>${h(p.adjust_note || t('adjustment'))}</span><span>${eur(p.adjust_cents)}</span></li>`);
   return `<article class="card col print">
     <div class="row">
@@ -322,7 +322,7 @@ function bambuCard(b) {
 
 function bambuRow(b) {
   const spool = state.spools.find(s => s.id === b.spool_id);
-  const what = b.state === 'ignored' ? t('ignored') : `${+b.grams.toFixed(1)} g${spool ? ' · ' + h(spoolName(spool)) : ''}`;
+  const what = b.state === 'ignored' ? t('ignored') : `${+b.grams.toFixed(2)} g${spool ? ' · ' + h(spoolName(spool)) : ''}`;
   return `<li>
     <span>${showDate(localDay(b.ended_at))} · ${h(b.title)} · ${what}</span>
     <span><button class="link" data-act="bambuReset" data-id="${b.id}">${t('putBack')}</button></span>
@@ -484,7 +484,7 @@ function printDialog(pre = {}) {
   const options = spoolOptions(spools, pre.spool_id);
   lineRow = () => `<div class="line">
     <select name="spool" aria-label="${t('filament')}">${options}</select>
-    <input name="grams" type="number" inputmode="decimal" min="0.1" step="0.1" placeholder="g" aria-label="${t('grams')}" required>
+    <input name="grams" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="g" aria-label="${t('grams')}" required>
     <button type="button" class="icon" data-act="rmLine" aria-label="${t('delete')}">${icons.close}</button>
   </div>`;
   const body = `
@@ -521,7 +521,7 @@ function stockDialog(b) {
   if (!spools.length) return toast(t('needSpool'));
   const body = `
     <label>${t('spool')}<select name="spool_id">${spoolOptions(spools, state.last_spool_id)}</select></label>
-    ${field('grams', t('gramsUsed'), b.suggested_g || '', 'type="number" inputmode="decimal" min="0.1" step="0.1" required')}
+    ${field('grams', t('gramsUsed'), b.suggested_g || '', 'type="number" inputmode="decimal" min="0.01" step="0.01" required')}
     ${b.failed ? `<p class="hint">${t('failedHint')}</p>` : ''}`;
   openDialog(t('stockOnlyTitle'), body, async fd => {
     await api('POST', `/api/bambu/prints/${b.id}/stock`, { spool_id: +fd.get('spool_id'), grams: parseFloat(fd.get('grams')) });
