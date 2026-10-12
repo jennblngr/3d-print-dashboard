@@ -1,6 +1,6 @@
 FROM node:24-alpine
 WORKDIR /app
-COPY package.json server.js auth.js backup.js ./
+COPY package.json server.js auth.js backup.js bambu.js ./
 COPY public ./public
 COPY scripts ./scripts
 RUN mkdir /data && chown node:node /data

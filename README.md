@@ -71,6 +71,18 @@ sudo docker compose start app
 - Every address is limited to 300 requests per minute, of which 60 changes.
 - Guests have no password. Their invite link is the key to their own data only, and the owner can replace it.
 
+## Bambu Lab prints
+
+Once the owner connects their Bambu Lab account (Prints tab), the server reads the account's print history every
+5 minutes and lists each print that ended since then under "To assign", with its filament weight. Nothing is billed
+or taken from the stock until the owner assigns it: billed to a person, taken from the stock only (always the case for
+a failed print, whose weight is estimated from how long it ran), or ignored.
+
+- Signing in uses a one-time code that Bambu Lab emails; the Bambu password is never asked for or stored.
+- The resulting access key is kept in the database (so it is also in the backups) and is never sent to a browser.
+- This is the interface Bambu's own apps use, not a documented one: it may stop working. Prints can always be entered by hand.
+- Only prints started from Bambu Studio or Bambu Handy show up; prints started from an SD card do not.
+
 ## Android NFC companion
 
 `android/` holds a tiny Android app with no screen, for the owner's phone only. Holding a TigerTag chip against the

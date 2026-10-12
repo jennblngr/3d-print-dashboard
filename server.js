@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { parseHash, verifyPassword } from './auth.js';
 import { createBackup, pruneBackups, lastBackupAt } from './backup.js';
+import { BambuError, requestCode, login as bambuLogin, recentPrints } from './bambu.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = +process.env.PORT || 3000;
@@ -23,6 +24,7 @@ const TRUST_PROXY = process.env.TRUST_PROXY === 'true';
 const SESSION_MS = 30 * 24 * 3600 * 1000;
 const MAX_REQUESTS_PER_MINUTE = +process.env.MAX_REQUESTS_PER_MINUTE || 300;
 const MAX_WRITES_PER_MINUTE = +process.env.MAX_WRITES_PER_MINUTE || 60;
+const BAMBU_SYNC_MS = 5 * 60 * 1000;
 
 if (!parseHash(ADMIN_PASSWORD_HASH)) {
   console.error('No valid owner password is configured. Run "npm run set-password" first.');
@@ -133,6 +135,25 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS sessions (
     token TEXT PRIMARY KEY,
     expires_at INTEGER NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+  -- prints read from the Bambu Lab account, each waiting for the owner to say what it was for:
+  -- pending -> billed (print_id), stock (spool_id and grams taken, nobody billed) or ignored
+  CREATE TABLE IF NOT EXISTS bambu_prints (
+    id INTEGER PRIMARY KEY,
+    title TEXT NOT NULL,
+    failed INTEGER NOT NULL DEFAULT 0,
+    ended_at TEXT NOT NULL,
+    material TEXT NOT NULL DEFAULT '',
+    planned_g REAL NOT NULL,
+    suggested_g REAL NOT NULL,
+    state TEXT NOT NULL DEFAULT 'pending',
+    print_id INTEGER REFERENCES prints(id) ON DELETE SET NULL,
+    spool_id INTEGER REFERENCES spools(id) ON DELETE SET NULL,
+    grams REAL
   );
 `);
 db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
@@ -309,6 +330,94 @@ function mustExist(table, id) {
   return row;
 }
 
+function getSetting(key) {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return row ? JSON.parse(row.value) : null;
+}
+function setSetting(key, value) {
+  db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, JSON.stringify(value));
+}
+
+// Must run inside tx(): bills a print to a person and takes its filament out of the spools.
+function createPrint(body) {
+  const person = mustExist('people', int(body.person_id, 1, Number.MAX_SAFE_INTEGER, 'Person'));
+  const title = str(body.title, 120, 'Title');
+  const adjust = body.adjust_cents ? int(body.adjust_cents, -10000000, 10000000, 'Adjustment') : 0;
+  const lines = Array.isArray(body.lines) ? body.lines.slice(0, 32) : [];
+  if (!lines.length && !adjust) throw bad('Add at least one filament or an adjustment');
+  let wishId = null;
+  if (body.wish_id) {
+    const wish = db.prepare('SELECT id FROM wishes WHERE id = ? AND person_id = ?').get(Number(body.wish_id) || 0, person.id);
+    if (wish) {
+      wishId = wish.id;
+      db.prepare("UPDATE wishes SET status = 'printed' WHERE id = ?").run(wishId);
+    }
+  }
+  const id = db.prepare(
+    'INSERT INTO prints (person_id, title, printed_at, adjust_cents, adjust_note, wish_id) VALUES (?, ?, ?, ?, ?, ?)'
+  ).run(person.id, title, day(body.printed_at), adjust, str(body.adjust_note, 200), wishId).lastInsertRowid;
+  for (const line of lines) {
+    const spool = mustExist('spools', int(line?.spool_id, 1, Number.MAX_SAFE_INTEGER, 'Spool'));
+    const grams = num(line.grams, 0.01, 100000, 'Grams');
+    const cost = Math.round((grams * spool.price_cents) / spool.weight_g);
+    const label = [spool.brand, spool.material, spool.variant, spool.color_name].filter(Boolean).join(' ');
+    db.prepare('INSERT INTO print_lines (print_id, spool_id, label, grams, cost_cents) VALUES (?, ?, ?, ?, ?)').run(id, spool.id, label, grams, cost);
+    db.prepare('UPDATE spools SET remaining_g = MAX(0, remaining_g - ?) WHERE id = ?').run(grams, spool.id);
+    setSetting('last_spool_id', spool.id);
+  }
+  return { id };
+}
+
+// ---------- Bambu Lab account ----------
+
+// The access key stays in the database: only this summary ever reaches the browser.
+function bambuStatus() {
+  const b = getSetting('bambu');
+  return b ? { connected: true, last_sync: b.lastSync || null, error: b.error || null } : { connected: false };
+}
+
+let bambuSyncing = null;
+// Files the prints that ended since the account was connected, to be assigned by the owner.
+function syncBambu() {
+  bambuSyncing ??= (async () => {
+    const account = getSetting('bambu');
+    if (!account) return;
+    let error = null;
+    try {
+      const add = db.prepare(
+        'INSERT OR IGNORE INTO bambu_prints (id, title, failed, ended_at, material, planned_g, suggested_g) VALUES (?, ?, ?, ?, ?, ?, ?)'
+      );
+      for (const p of await recentPrints(account.token)) {
+        if (p.endedAt < account.since) continue;
+        add.run(p.id, p.title, p.failed ? 1 : 0, p.endedAt, p.material, p.plannedGrams, p.suggestedGrams);
+      }
+    } catch (e) {
+      if (!(e instanceof BambuError)) throw e;
+      error = e.reason;
+    }
+    // The owner may have disconnected or signed in again while Bambu was answering.
+    const current = getSetting('bambu');
+    if (current?.token !== account.token) return;
+    setSetting('bambu', { ...current, error, lastSync: error ? current.lastSync : new Date().toISOString() });
+  })().finally(() => {
+    bambuSyncing = null;
+  });
+  return bambuSyncing;
+}
+const syncBambuQuietly = () => syncBambu().catch(e => console.error(`Bambu sync failed: ${e.message}`));
+setInterval(syncBambuQuietly, BAMBU_SYNC_MS).unref();
+syncBambuQuietly();
+
+function bambuHttpError(e) {
+  if (!(e instanceof BambuError)) return e;
+  return new HttpError(502, e.reason === 'unreachable' ? 'Bambu Lab cannot be reached, try again later' : 'Bambu Lab refused: check the email address and the code');
+}
+function pendingBambuPrint(id) {
+  const row = mustExist('bambu_prints', id);
+  if (row.state !== 'pending') throw new HttpError(409, 'This print was already handled');
+  return row;
+}
+
 // ---------- routes ----------
 
 const routes = [];
@@ -341,6 +450,12 @@ route('POST', '/api/logout', 'public', ({ req, res }) => {
 
 route('GET', '/api/state', 'admin', () => ({
   last_backup: lastBackupAt(DATA_DIR),
+  bambu: bambuStatus(),
+  bambu_prints: db.prepare(
+    `SELECT id, title, failed, ended_at, material, planned_g, suggested_g, state, spool_id, grams
+     FROM bambu_prints WHERE state != 'billed' ORDER BY state = 'pending' DESC, ended_at DESC LIMIT 200`
+  ).all(),
+  last_spool_id: getSetting('last_spool_id'),
   spools: db.prepare('SELECT * FROM spools ORDER BY archived, brand COLLATE NOCASE, material, variant, color_name').all(),
   products: db.prepare('SELECT * FROM products').all(),
   people: db.prepare(`SELECT pe.id, pe.name, pe.token, ${BALANCE_SQL} AS balance_cents FROM people pe ORDER BY pe.name COLLATE NOCASE`).all(),
@@ -389,42 +504,81 @@ route('DELETE', '/api/people/:id', 'admin', ({ params }) => {
   return { ok: true };
 });
 
-route('POST', '/api/prints', 'admin', ({ body }) => {
-  const person = mustExist('people', int(body.person_id, 1, Number.MAX_SAFE_INTEGER, 'Person'));
-  const title = str(body.title, 120, 'Title');
-  const adjust = body.adjust_cents ? int(body.adjust_cents, -10000000, 10000000, 'Adjustment') : 0;
-  const lines = Array.isArray(body.lines) ? body.lines.slice(0, 32) : [];
-  if (!lines.length && !adjust) throw bad('Add at least one filament or an adjustment');
-  return tx(() => {
-    let wishId = null;
-    if (body.wish_id) {
-      const wish = db.prepare('SELECT id FROM wishes WHERE id = ? AND person_id = ?').get(Number(body.wish_id) || 0, person.id);
-      if (wish) {
-        wishId = wish.id;
-        db.prepare("UPDATE wishes SET status = 'printed' WHERE id = ?").run(wishId);
-      }
-    }
-    const id = db.prepare(
-      'INSERT INTO prints (person_id, title, printed_at, adjust_cents, adjust_note, wish_id) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(person.id, title, day(body.printed_at), adjust, str(body.adjust_note, 200), wishId).lastInsertRowid;
-    for (const line of lines) {
-      const spool = mustExist('spools', int(line?.spool_id, 1, Number.MAX_SAFE_INTEGER, 'Spool'));
-      const grams = num(line.grams, 0.01, 100000, 'Grams');
-      const cost = Math.round((grams * spool.price_cents) / spool.weight_g);
-      const label = [spool.brand, spool.material, spool.variant, spool.color_name].filter(Boolean).join(' ');
-      db.prepare('INSERT INTO print_lines (print_id, spool_id, label, grams, cost_cents) VALUES (?, ?, ?, ?, ?)').run(id, spool.id, label, grams, cost);
-      db.prepare('UPDATE spools SET remaining_g = MAX(0, remaining_g - ?) WHERE id = ?').run(grams, spool.id);
-    }
-    return { id };
-  });
-});
+route('POST', '/api/prints', 'admin', ({ body }) => tx(() => createPrint(body)));
 route('DELETE', '/api/prints/:id', 'admin', ({ params }) =>
   tx(() => {
     // give the filament back to the spools that still exist
     for (const l of db.prepare('SELECT spool_id, grams FROM print_lines WHERE print_id = ? AND spool_id IS NOT NULL').all(params.id)) {
       db.prepare('UPDATE spools SET remaining_g = remaining_g + ? WHERE id = ?').run(l.grams, l.spool_id);
     }
+    // a print that came from the Bambu account goes back to the ones waiting to be assigned
+    db.prepare("UPDATE bambu_prints SET state = 'pending', print_id = NULL WHERE print_id = ?").run(params.id);
     db.prepare('DELETE FROM prints WHERE id = ?').run(params.id);
+    return { ok: true };
+  })
+);
+
+route('POST', '/api/bambu/code', 'admin', async ({ body }) => {
+  await requestCode(str(body.email, 200, 'Email')).catch(e => {
+    throw bambuHttpError(e);
+  });
+  return { ok: true };
+});
+route('POST', '/api/bambu/login', 'admin', async ({ body }) => {
+  const email = str(body.email, 200, 'Email');
+  const code = str(body.code, 12, 'Code');
+  const { token, expiresAt } = await bambuLogin(email, code).catch(e => {
+    throw bambuHttpError(e);
+  });
+  // Only prints that end from now on are picked up: the older history is left alone.
+  setSetting('bambu', { token, expiresAt, since: getSetting('bambu')?.since || new Date().toISOString() });
+  await syncBambu();
+  return { ok: true };
+});
+route('DELETE', '/api/bambu', 'admin', () => {
+  db.prepare("DELETE FROM settings WHERE key = 'bambu'").run();
+  return { ok: true };
+});
+route('POST', '/api/bambu/sync', 'admin', async () => {
+  await syncBambu();
+  return bambuStatus();
+});
+route('POST', '/api/bambu/prints/:id/bill', 'admin', ({ params, body }) =>
+  tx(() => {
+    if (pendingBambuPrint(params.id).failed) throw bad('A failed print cannot be billed');
+    const { id } = createPrint(body);
+    db.prepare("UPDATE bambu_prints SET state = 'billed', print_id = ? WHERE id = ?").run(id, params.id);
+    return { id };
+  })
+);
+// Filament used for nobody's bill (a failed print, or one for the owner): only the stock moves.
+route('POST', '/api/bambu/prints/:id/stock', 'admin', ({ params, body }) =>
+  tx(() => {
+    pendingBambuPrint(params.id);
+    const spool = mustExist('spools', int(body.spool_id, 1, Number.MAX_SAFE_INTEGER, 'Spool'));
+    const grams = num(body.grams, 0.01, 100000, 'Grams');
+    // what is recorded is what really left the spool, so that undoing gives back exactly that
+    const taken = Math.min(grams, spool.remaining_g);
+    db.prepare('UPDATE spools SET remaining_g = remaining_g - ? WHERE id = ?').run(taken, spool.id);
+    db.prepare("UPDATE bambu_prints SET state = 'stock', spool_id = ?, grams = ? WHERE id = ?").run(spool.id, taken, params.id);
+    setSetting('last_spool_id', spool.id);
+    return { ok: true };
+  })
+);
+route('POST', '/api/bambu/prints/:id/ignore', 'admin', ({ params }) => {
+  pendingBambuPrint(params.id);
+  db.prepare("UPDATE bambu_prints SET state = 'ignored' WHERE id = ?").run(params.id);
+  return { ok: true };
+});
+// Undo "stock" or "ignore": the filament goes back to its spool and the print waits again.
+route('POST', '/api/bambu/prints/:id/reset', 'admin', ({ params }) =>
+  tx(() => {
+    const row = mustExist('bambu_prints', params.id);
+    if (row.state !== 'stock' && row.state !== 'ignored') throw new HttpError(409, 'This print cannot be put back');
+    if (row.state === 'stock' && row.spool_id) {
+      db.prepare('UPDATE spools SET remaining_g = remaining_g + ? WHERE id = ?').run(row.grams, row.spool_id);
+    }
+    db.prepare("UPDATE bambu_prints SET state = 'pending', spool_id = NULL, grams = NULL WHERE id = ?").run(params.id);
     return { ok: true };
   })
 );

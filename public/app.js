@@ -15,8 +15,12 @@ const h = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&
 const toCents = v => Math.round(parseFloat(String(v || '0').replace(',', '.')) * 100) || 0;
 const today = () => new Date().toLocaleDateString('sv'); // YYYY-MM-DD in local time
 const showDate = d => new Date(d + 'T00:00').toLocaleDateString(lang);
+const localDay = iso => new Date(iso).toLocaleDateString('sv');
 const spoolName = s => [s.brand, s.material, s.variant, s.color_name].filter(Boolean).join(' ');
 const isLink = s => /^https?:\/\//i.test(s || '');
+const activeSpools = () => state.spools.filter(s => !s.archived);
+const spoolOptions = (spools, selected) =>
+  spools.map(s => `<option value="${s.id}" ${s.id === selected ? 'selected' : ''}>${h(spoolName(s))} (${Math.round(s.remaining_g)} g)</option>`).join('');
 
 let state = null;
 let tab = sessionStorage.getItem('tab') || 'spools';
@@ -178,8 +182,14 @@ const views = {
     </div>${cards.join('') || empty()}`;
   },
   prints() {
+    const pending = state.bambu_prints.filter(b => b.state === 'pending');
+    const handled = state.bambu_prints.filter(b => b.state !== 'pending');
     return `<div class="bar"><button class="primary" data-act="print">${t('newPrint')}</button></div>
-      ${state.prints.map(p => printCard(p, true)).join('') || empty()}`;
+      ${pending.length ? `<h2>${t('toAssign')}</h2>${pending.map(bambuCard).join('')}<h2>${t('prints')}</h2>` : ''}
+      ${state.prints.map(p => printCard(p, true)).join('') || empty()}
+      ${handled.length ? `<details><summary>${t('notBilled', { count: handled.length })}</summary>
+        <article class="card col"><ul class="lines">${handled.map(bambuRow).join('')}</ul></article></details>` : ''}
+      ${bambuPanel()}`;
   },
   people() {
     const cards = state.people.map(p => {
@@ -213,13 +223,60 @@ const views = {
 
 function renderAdmin() {
   if (!views[tab]) tab = 'spools';
-  const pending = state.wishes.filter(w => w.status === 'requested').length;
+  const badges = {
+    prints: state.bambu_prints.filter(b => b.state === 'pending').length,
+    wishes: state.wishes.filter(w => w.status === 'requested').length,
+  };
   app.innerHTML = `<header><h1>${t('appName')}</h1><button class="link" data-act="logout">${t('logout')}</button></header>
     <nav>${Object.keys(views).map(k =>
-      `<button data-act="tab" data-id="${k}" class="${k === tab ? 'on' : ''}">${t(k)}${k === 'wishes' && pending ? ` <b class="badge">${pending}</b>` : ''}</button>`
+      `<button data-act="tab" data-id="${k}" class="${k === tab ? 'on' : ''}">${t(k)}${badges[k] ? ` <b class="badge">${badges[k]}</b>` : ''}</button>`
     ).join('')}</nav>
     <main>${views[tab]()}</main>
     <footer>${state.last_backup ? t('lastBackup', { date: new Date(state.last_backup).toLocaleString(lang) }) : t('noBackup')}</footer>`;
+}
+
+// A print read from the Bambu Lab account, waiting for the owner to say what it was for.
+function bambuCard(b) {
+  const planned = b.failed ? ` · ${t('plannedGrams', { grams: +b.planned_g.toFixed(1) })}` : '';
+  return `<article class="card col">
+    <div class="row">
+      <div class="grow"><strong>${h(b.title)}</strong>
+        <small>${showDate(localDay(b.ended_at))}${b.material ? ' · ' + h(b.material) : ''} · ${+b.suggested_g.toFixed(1)} g${planned}</small></div>
+      ${b.failed ? `<span class="chip declined">${t('failedPrint')}</span>` : ''}
+    </div>
+    <div class="bar">
+      ${b.failed ? '' : `<button class="primary" data-act="bambuBill" data-id="${b.id}">${t('bill')}</button>`}
+      <button class="${b.failed ? 'primary' : ''}" data-act="bambuStock" data-id="${b.id}">${t('stockOnly')}</button>
+      <button data-act="bambuIgnore" data-id="${b.id}">${t('ignore')}</button>
+    </div>
+  </article>`;
+}
+
+function bambuRow(b) {
+  const spool = state.spools.find(s => s.id === b.spool_id);
+  const what = b.state === 'ignored' ? t('ignored') : `${+b.grams.toFixed(1)} g${spool ? ' · ' + h(spoolName(spool)) : ''}`;
+  return `<li>
+    <span>${showDate(localDay(b.ended_at))} · ${h(b.title)} · ${what}</span>
+    <span><button class="link" data-act="bambuReset" data-id="${b.id}">${t('putBack')}</button></span>
+  </li>`;
+}
+
+function bambuPanel() {
+  const b = state.bambu;
+  const broken = b.connected && b.error && b.error !== 'unreachable';
+  const status = !b.connected ? t('bambuOff')
+    : broken ? t('bambuExpired')
+    : b.error ? t('bambuUnreachable')
+    : b.last_sync ? t('bambuOn', { date: new Date(b.last_sync).toLocaleString(lang) })
+    : t('bambuNever');
+  return `<h2>${t('bambuTitle')}</h2>
+    <article class="card col">
+      <p class="note">${status}</p>
+      <div class="bar">
+        ${!b.connected || broken ? `<button class="primary" data-act="bambuConnect">${t('bambuConnect')}</button>` : `<button data-act="bambuSync">${t('bambuSync')}</button>`}
+        ${b.connected ? `<button class="danger" data-act="bambuDisconnect">${t('bambuDisconnect')}</button>` : ''}
+      </div>
+    </article>`;
 }
 
 function spoolCard(s) {
@@ -350,8 +407,8 @@ async function scanDialog() {
 
 function printDialog(pre = {}) {
   if (!state.people.length) return toast(t('needPerson'));
-  const spools = state.spools.filter(s => !s.archived);
-  const options = spools.map(s => `<option value="${s.id}">${h(spoolName(s))} (${Math.round(s.remaining_g)} g)</option>`).join('');
+  const spools = activeSpools();
+  const options = spoolOptions(spools, pre.spool_id);
   lineRow = () => `<div class="line">
     <select name="spool" aria-label="${t('filament')}">${options}</select>
     <input name="grams" type="number" inputmode="decimal" min="0.1" step="0.1" placeholder="g" aria-label="${t('grams')}" required>
@@ -361,7 +418,7 @@ function printDialog(pre = {}) {
     <label>${t('person')}<select name="person_id">${state.people.map(p =>
       `<option value="${p.id}" ${p.id === pre.person_id ? 'selected' : ''}>${h(p.name)}</option>`).join('')}</select></label>
     ${field('title', t('title'), pre.title || '', 'required maxlength="120"')}
-    ${field('printed_at', t('date'), today(), 'type="date" required')}
+    ${field('printed_at', t('date'), pre.printed_at || today(), 'type="date" required')}
     <fieldset><legend>${t('filament')}</legend>
       <div id="lines">${spools.length ? lineRow() : ''}</div>
       ${spools.length ? `<button type="button" data-act="addLine">${t('addFilament')}</button>` : ''}
@@ -370,7 +427,7 @@ function printDialog(pre = {}) {
     ${field('adjust_note', t('adjustNote'), '', 'maxlength="200"')}
     <p class="total" id="total"></p>`;
   openDialog(t('newPrint'), body, async (fd, form) => {
-    await api('POST', '/api/prints', {
+    await api('POST', pre.bambu_id ? `/api/bambu/prints/${pre.bambu_id}/bill` : '/api/prints', {
       person_id: +fd.get('person_id'),
       title: fd.get('title'),
       printed_at: fd.get('printed_at'),
@@ -380,7 +437,36 @@ function printDialog(pre = {}) {
       lines: [...form.querySelectorAll('.line')].map(row => ({ spool_id: +$('select', row).value, grams: parseFloat($('input', row).value) })),
     });
   });
+  const firstGrams = $('#lines input', dlg);
+  if (pre.grams && firstGrams) firstGrams.value = pre.grams;
   printTotal();
+}
+
+// Filament that goes on nobody's bill: a failed print, or one the owner made for themselves.
+function stockDialog(b) {
+  const spools = activeSpools();
+  if (!spools.length) return toast(t('needSpool'));
+  const body = `
+    <label>${t('spool')}<select name="spool_id">${spoolOptions(spools, state.last_spool_id)}</select></label>
+    ${field('grams', t('gramsUsed'), b.suggested_g || '', 'type="number" inputmode="decimal" min="0.1" step="0.1" required')}
+    ${b.failed ? `<p class="hint">${t('failedHint')}</p>` : ''}`;
+  openDialog(`${t('stockOnlyTitle')} · ${b.title}`, body, async fd => {
+    await api('POST', `/api/bambu/prints/${b.id}/stock`, { spool_id: +fd.get('spool_id'), grams: parseFloat(fd.get('grams')) });
+  });
+}
+
+// Two steps: Bambu Lab emails a one-time code, which is then typed here. No Bambu password involved.
+function bambuConnectDialog() {
+  const emailField = field('email', t('bambuEmail'), '', 'type="email" required maxlength="200" autocomplete="email"');
+  openDialog(t('bambuTitle'), `<p class="hint">${t('bambuEmailHint')}</p>${emailField}`, async fd => {
+    const email = fd.get('email').trim();
+    await api('POST', '/api/bambu/code', { email });
+    const codeField = field('code', t('bambuCode'), '', 'required inputmode="numeric" autocomplete="one-time-code" maxlength="12"');
+    return () => openDialog(t('bambuTitle'), codeField, async fd2 => {
+      await api('POST', '/api/bambu/login', { email, code: fd2.get('code').trim() });
+      return () => toast(t('bambuConnected'));
+    }, t('bambuConnect'));
+  }, t('bambuSendCode'));
 }
 
 function printTotal() {
@@ -439,6 +525,30 @@ const actions = {
   scan: scanDialog,
   print: () => printDialog(),
   delPrint: id => remove(`/api/prints/${id}`),
+  bambuBill(id) {
+    const b = state.bambu_prints.find(x => x.id === id);
+    printDialog({ title: b.title, grams: b.suggested_g, printed_at: localDay(b.ended_at), spool_id: state.last_spool_id, bambu_id: b.id });
+  },
+  bambuStock: id => stockDialog(state.bambu_prints.find(x => x.id === id)),
+  async bambuIgnore(id) {
+    await api('POST', `/api/bambu/prints/${id}/ignore`);
+    await refresh();
+  },
+  async bambuReset(id) {
+    await api('POST', `/api/bambu/prints/${id}/reset`);
+    await refresh();
+  },
+  bambuConnect: bambuConnectDialog,
+  async bambuSync() {
+    await api('POST', '/api/bambu/sync');
+    await refresh();
+    toast(t('bambuChecked'));
+  },
+  async bambuDisconnect() {
+    if (!confirm(t('confirmBambuDisconnect'))) return;
+    await api('DELETE', '/api/bambu');
+    await refresh();
+  },
   addLine() {
     $('#lines', dlg).insertAdjacentHTML('beforeend', lineRow());
   },
