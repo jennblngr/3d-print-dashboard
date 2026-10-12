@@ -481,7 +481,7 @@ route('DELETE', '/api/my/wishes/:id', 'guest', ({ person, params }) => {
 
 const TYPES = { '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png' };
 const STATIC = new Map(
-  ['style.css', 'app.js', 'i18n.js', 'sw.js', 'icon-192.png', 'icon-512.png'].map(name => [
+  ['style.css', 'app.js', 'i18n.js', 'tigertag.js', 'tigertag-db.js', 'sw.js', 'icon-192.png', 'icon-512.png'].map(name => [
     '/' + name,
     { type: TYPES[path.extname(name)], data: readFileSync(path.join(__dirname, 'public', name)) },
   ])

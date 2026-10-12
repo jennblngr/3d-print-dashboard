@@ -1,4 +1,5 @@
 import { t, lang } from './i18n.js';
+import { decodeTigerTag, colorFamily } from './tigertag.js';
 
 const $ = (sel, el = document) => el.querySelector(sel);
 const app = $('#app');
@@ -45,6 +46,7 @@ async function refresh() {
     return guestToken ? renderMessage(t('badLink')) : renderLogin();
   }
   guestToken ? renderGuest() : renderAdmin();
+  if (!guestToken) takeTagFromUrl();
 }
 
 function toast(msg) {
@@ -266,11 +268,31 @@ function spoolDialog(spool, preset = {}) {
 }
 
 // An RFID tag belongs to one spool: open it, or start a new spool carrying the tag.
-function handleTag(code) {
+// `details` is what the tag itself says about the spool, when it could be decoded.
+function handleTag(code, details = {}) {
   const found = state.spools.find(s => s.code === code);
-  toast(t(found ? 'spoolFound' : 'spoolNew'));
-  spoolDialog(found, { code });
+  toast(t(found ? 'spoolFound' : details.brand || details.material ? 'tagRead' : 'spoolNew'));
+  spoolDialog(found, { ...details, code });
 }
+
+// The Android companion app reads TigerTag chips (a browser cannot) and opens this app with the
+// chip memory after "#tigertag=". The fragment never leaves the phone: browsers do not send it.
+function takeTagFromUrl() {
+  const match = /^#tigertag=(.+)$/.exec(location.hash);
+  if (!match) return;
+  history.replaceState(null, '', location.pathname);
+  try {
+    const { code, ...details } = decodeTigerTag(decodeURIComponent(match[1]));
+    details.color_name = t('color_' + colorFamily(details.color_hex));
+    if (tab !== 'spools') actions.tab('spools');
+    handleTag(code, details);
+  } catch (e) {
+    toast(t(e.reason === 'blank' ? 'tagBlank' : 'tagInvalid'));
+  }
+}
+window.addEventListener('hashchange', () => {
+  if (state && !guestToken) takeTagFromUrl();
+});
 
 // A barcode names a product, which several spools can share: list the spools that carry it
 // and offer a new one, prefilled from what was saved for that barcode last time.

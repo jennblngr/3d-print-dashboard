@@ -83,5 +83,12 @@ Recording a print takes the grams off the spool; deleting the print gives them b
   spools can share it. The app remembers what you saved for a barcode (brand, material, colour, weight, price) and
   prefills the next spool of that product; scanning also lists the spools you already own with that barcode.
   Nothing is looked up online.
-- **RFID (TigerTag and other NFC tags):** uses Web NFC (Chrome on Android only). The tag's serial number is unique
-  to one spool, and scanning it opens that spool. Browsers cannot read the TigerTag data stored on the chip, so brand, material and colour are typed once.
+- **Standard NFC tags (NDEF):** uses Web NFC (Chrome on Android only). The tag's serial number is unique to one
+  spool, and scanning it opens that spool.
+- **TigerTag chips:** they are not NDEF, so no browser can read them. The app can decode their memory
+  (`public/tigertag.js`, following the open [TigerTag specification](https://github.com/TigerTag-Project/TigerTag-RFID-Guide))
+  when it is opened with the chip's bytes as hexadecimal text, from page 0, after `#tigertag=` in the URL. It then
+  prefills brand, material, type, colour and weight, and identifies the spool by the chip's serial number. Reading
+  the chip and opening that URL is the job of an Android companion app, which does not exist yet.
+  Brand and material names come from the public TigerTag registry (CC0), bundled in `public/tigertag-db.js`;
+  refresh it with `node scripts/make-tigertag-db.js <registry database folder>`.
