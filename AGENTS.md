@@ -105,7 +105,20 @@ d'elles est violée, préviens-moi immédiatement.
   toucher aux fichiers ni aux conteneurs des autres projets du serveur.
 - Sur le VPS, tu n'as pas d'accès direct : donne-moi les commandes en blocs à
   copier, une étape à la fois, en précisant l'utilisateur (`ubuntu` pour tout
-  ce qui demande `sudo` ou Docker), et je te colle le résultat.
+  ce qui demande `sudo`), et je te colle le résultat.
+- Sur le VPS, chaque projet a deux utilisateurs à lui. Pour le dashboard :
+  `deploy-3d-print-dashboard` reçoit la mise en ligne de GitHub (sa clé ne
+  peut lancer que `/usr/local/bin/3d-print-dashboard-deploy`), et
+  `run-3d-print-dashboard` fait tourner Docker. Les conteneurs sont donc
+  invisibles pour `ubuntu`, même avec `sudo docker`. Pour lire le journal de
+  l'application, avec `ubuntu` :
+  `sudo -u run-3d-print-dashboard sh -c 'S=/run/user/$(id -u)/docker.sock; [ -S "$S" ] && export DOCKER_HOST=unix://$S; docker logs --tail 20 3d-print-dashboard-app-1'`
+- Les secrets de mise en ligne (`VPS_USER`, `VPS_SSH_KEY`...) sont propres à
+  chaque dépôt, dans son environnement `production` sur GitHub. Ne jamais y
+  enregistrer ceux d'un autre projet : le 12/10/2026, ceux de Scrabble mis ici
+  par erreur ont fait déployer Scrabble à chaque envoi de ce dépôt. Après une
+  mise en ligne, vérifier que le journal finit par `Deployed:` suivi d'un
+  commit de CE dépôt.
 - Le mot de passe du propriétaire n'est jamais enregistré : seule son empreinte
   l'est. On le définit ou on le change avec la commande `npm run set-password`.
 - Limites de fréquence par visiteur : 300 requêtes par minute, dont 60
@@ -182,13 +195,15 @@ d'elles est violée, préviens-moi immédiatement.
   sur mon Pixel et validée le 12/10/2026 sur deux bobines TigerTag
   différentes. Elle se construit avec `sh android/build.sh` et s'installe par
   câble avec `adb install -r`.
-- Fait : relevé automatique des impressions Bambu Lab, testé sur mon Mac le
-  12/10/2026 avec mon vrai historique. Pas encore en ligne : après la mise en
-  ligne, connecter mon compte Bambu depuis l'onglet Impressions.
+- Fait, en ligne depuis le 13/10/2026 : design « Coton » et nouvelles icônes,
+  relevé automatique des impressions Bambu Lab, poids à deux décimales,
+  impressions « pour moi » et impressions partagées entre plusieurs personnes.
+  La base du VPS a été convertie sans erreur (journal vérifié).
 - Prochaines étapes :
-  1. suite du test en conditions réelles : scan du code-barres à la caméra,
+  1. tester en ligne le nouveau design, « Moi » et le partage (montants dus
+     inchangés, part de chacun, page d'un proche), et connecter mon compte
+     Bambu depuis l'onglet Impressions ;
+  2. suite du test en conditions réelles : scan du code-barres à la caméra,
      lien d'invitation ouvert par un proche, restauration d'une sauvegarde
      sur le VPS ;
-  2. copie des sauvegardes hors du VPS (choix à faire) ;
-  3. nouveau design appliqué sur mon Mac le 13/10/2026 : à tester, puis à
-     mettre en ligne.
+  3. copie des sauvegardes hors du VPS (choix à faire).
