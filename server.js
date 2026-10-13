@@ -351,7 +351,10 @@ function listPrints(guestId) {
     const shared = p.group_id ? others.all(p.group_id, p.id) : [];
     p.share_count = shared.length + 1;
     // a null name is the owner's own part
-    if (!guestId) p.shared_with = shared.map(o => o.name);
+    if (!guestId) {
+      p.shared_with = shared.map(o => o.name);
+      p.edit = printSnapshot(p.id).form;
+    }
     delete p.group_id;
   }
   return prints;
@@ -405,11 +408,95 @@ function setSetting(key, value) {
   db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)').run(key, JSON.stringify(value));
 }
 
+const spoolLabel = spool => [spool.brand, spool.material, spool.variant, spool.color_name].filter(Boolean).join(' ');
+const spoolCost = (spool, grams) => Math.round((grams * spool.price_cents) / spool.weight_g);
+// lines of a print are told apart by spool, or by label once the spool is deleted
+const lineKey = (spoolId, label) => (spoolId ? `s${spoolId}` : `l${label}`);
+
+// The cost of a line in an edited print, for filament the print already used. Costs are
+// frozen when a print is recorded, so a later change of the spool's price must not show up:
+// - same grams split the same way: the exact cost billed before;
+// - the spool's price has not changed: the usual sum;
+// - otherwise: the price per gram the print was billed at.
+function lineCost(kept, spool, grams, parts) {
+  const same = kept.lines.length === kept.parts && kept.parts === parts &&
+    kept.lines.every(l => Math.abs(l.grams - grams) < 1e-9 && l.cost_cents === kept.lines[0].cost_cents);
+  if (same) return kept.lines[0].cost_cents;
+  if (spool && kept.lines.every(l => spoolCost(spool, l.grams) === l.cost_cents)) return spoolCost(spool, grams);
+  return kept.grams > 0 ? Math.round((grams * kept.cost_cents) / kept.grams) : 0;
+}
+
+// Everything about a print (all its parts when shared) needed to show it in the edit form
+// and to keep its billed costs: who it is for, and its filament summed over every part.
+function printSnapshot(id) {
+  const groupId = mustExist('prints', id).group_id;
+  const prints = groupId
+    ? db.prepare('SELECT * FROM prints WHERE group_id = ? ORDER BY id').all(groupId)
+    : db.prepare('SELECT * FROM prints WHERE id = ?').all(id);
+  const lines = new Map();
+  for (const p of prints) {
+    for (const l of db.prepare('SELECT * FROM print_lines WHERE print_id = ? ORDER BY id').all(p.id)) {
+      const key = lineKey(l.spool_id, l.label);
+      const kept = lines.get(key) || { spool_id: l.spool_id, label: l.label, grams: 0, cost_cents: 0, parts: prints.length, lines: [] };
+      kept.grams += l.grams;
+      kept.cost_cents += l.cost_cents;
+      kept.lines.push(l);
+      lines.set(key, kept);
+    }
+  }
+  // the adjustment was split between every part, the owner's included, which pays nothing
+  const billedPart = prints.find(p => p.person_id !== null);
+  return {
+    prints,
+    lines,
+    form: {
+      person_ids: prints.map(p => p.person_id),
+      title: prints[0].title,
+      printed_at: prints[0].printed_at,
+      adjust_cents: billedPart ? billedPart.adjust_cents * prints.length : 0,
+      adjust_note: billedPart?.adjust_note || '',
+      lines: [...lines.values()].map(l => ({ spool_id: l.spool_id, label: l.label, grams: Math.round(l.grams * 100) / 100, cost_cents: l.cost_cents })),
+    },
+  };
+}
+
+// Must run inside tx(): deletes a print with every part of it, giving its filament back.
+// Returns the ids of the Bambu Lab prints it was billed from.
+function removePrint(snapshot) {
+  const bambuIds = [];
+  for (const p of snapshot.prints) {
+    // give the filament back to the spools that still exist
+    for (const l of db.prepare('SELECT spool_id, grams FROM print_lines WHERE print_id = ? AND spool_id IS NOT NULL').all(p.id)) {
+      db.prepare('UPDATE spools SET remaining_g = remaining_g + ? WHERE id = ?').run(l.grams, l.spool_id);
+    }
+    bambuIds.push(...db.prepare('SELECT id FROM bambu_prints WHERE print_id = ?').all(p.id).map(r => r.id));
+    db.prepare('DELETE FROM prints WHERE id = ?').run(p.id);
+  }
+  return bambuIds;
+}
+
+// Must run inside tx(): an edited print is recorded again from scratch, keeping what ties it
+// to the rest: its Bambu Lab print, the wish it answered, and when it was first recorded.
+function editPrint(id, body) {
+  const before = printSnapshot(id);
+  const bambuIds = removePrint(before);
+  const { id: newId } = createPrint({ ...body, wish_id: null }, before.lines);
+  const created = db.prepare('SELECT id, person_id FROM prints WHERE id = ? OR group_id = ?').all(newId, newId);
+  for (const p of created) {
+    const wishId = before.prints.find(o => o.person_id !== null && o.person_id === p.person_id)?.wish_id ?? null;
+    db.prepare('UPDATE prints SET wish_id = ?, created_at = ? WHERE id = ?').run(wishId, before.prints[0].created_at, p.id);
+  }
+  for (const b of bambuIds) db.prepare("UPDATE bambu_prints SET state = 'billed', print_id = ? WHERE id = ?").run(newId, b);
+  return { id: newId };
+}
+
 // Must run inside tx(): takes a print's filament out of the spools and bills it.
 // `person_ids` lists who it is for; null stands for the owner, whose part is billed to nobody.
 // Several people share a print in equal parts: each gets a print of their own holding their
 // part of the filament and of the adjustment, so every amount is computed as for any print.
-function createPrint(body) {
+// `previous` is only given when a print is edited: the filament it already used keeps the
+// cost it was billed at (see printSnapshot).
+function createPrint(body, previous = null) {
   const asked = Array.isArray(body.person_ids) ? body.person_ids.slice(0, 50) : [body.person_id];
   const ids = [...new Set(asked.map(v => {
     if (v === undefined) throw bad('Person is required');
@@ -424,10 +511,19 @@ function createPrint(body) {
   const billed = people.some(Boolean);
   const adjust = billed && body.adjust_cents ? int(body.adjust_cents, -10000000, 10000000, 'Adjustment') : 0;
   const note = str(body.adjust_note, 200);
-  const lines = (Array.isArray(body.lines) ? body.lines.slice(0, 32) : []).map(line => ({
-    spool: mustExist('spools', int(line?.spool_id, 1, Number.MAX_SAFE_INTEGER, 'Spool')),
-    grams: num(line.grams, 0.01, 100000, 'Grams') / parts,
-  }));
+  const lines = (Array.isArray(body.lines) ? body.lines.slice(0, 32) : []).map(line => {
+    const grams = num(line?.grams, 0.01, 100000, 'Grams') / parts;
+    // a line kept from the print being edited whose spool was deleted since: no stock to move
+    if (line.spool_id == null && previous) {
+      const kept = previous.get(lineKey(null, line.label));
+      if (!kept) throw bad('Spool is required');
+      return { spool: null, label: kept.label, grams, cost: lineCost(kept, null, grams, parts) };
+    }
+    const spool = mustExist('spools', int(line.spool_id, 1, Number.MAX_SAFE_INTEGER, 'Spool'));
+    const label = spoolLabel(spool);
+    const kept = previous?.get(lineKey(spool.id));
+    return { spool, label, grams, cost: kept ? lineCost(kept, spool, grams, parts) : spoolCost(spool, grams) };
+  });
   if (!lines.length && !adjust) throw bad(billed ? 'Add at least one filament or an adjustment' : 'Add at least one filament');
 
   let firstId = null;
@@ -448,10 +544,9 @@ function createPrint(body) {
       groupId = id;
       db.prepare('UPDATE prints SET group_id = ? WHERE id = ?').run(groupId, id);
     }
-    for (const { spool, grams } of lines) {
-      const cost = Math.round((grams * spool.price_cents) / spool.weight_g);
-      const label = [spool.brand, spool.material, spool.variant, spool.color_name].filter(Boolean).join(' ');
-      db.prepare('INSERT INTO print_lines (print_id, spool_id, label, grams, cost_cents) VALUES (?, ?, ?, ?, ?)').run(id, spool.id, label, grams, cost);
+    for (const { spool, label, grams, cost } of lines) {
+      db.prepare('INSERT INTO print_lines (print_id, spool_id, label, grams, cost_cents) VALUES (?, ?, ?, ?, ?)').run(id, spool?.id ?? null, label, grams, cost);
+      if (!spool) continue;
       db.prepare('UPDATE spools SET remaining_g = MAX(0, remaining_g - ?) WHERE id = ?').run(grams, spool.id);
       setSetting('last_spool_id', spool.id);
     }
@@ -597,20 +692,13 @@ route('DELETE', '/api/people/:id', 'admin', ({ params }) => {
 });
 
 route('POST', '/api/prints', 'admin', ({ body }) => tx(() => createPrint(body)));
+route('PUT', '/api/prints/:id', 'admin', ({ params, body }) => tx(() => editPrint(params.id, body)));
 route('DELETE', '/api/prints/:id', 'admin', ({ params }) =>
   tx(() => {
     // a shared print goes as a whole: every person's part with it
-    const groupId = db.prepare('SELECT group_id FROM prints WHERE id = ?').get(params.id)?.group_id;
-    const ids = groupId ? db.prepare('SELECT id FROM prints WHERE group_id = ?').all(groupId).map(r => r.id) : [params.id];
-    for (const id of ids) {
-      // give the filament back to the spools that still exist
-      for (const l of db.prepare('SELECT spool_id, grams FROM print_lines WHERE print_id = ? AND spool_id IS NOT NULL').all(id)) {
-        db.prepare('UPDATE spools SET remaining_g = remaining_g + ? WHERE id = ?').run(l.grams, l.spool_id);
-      }
-      // a print that came from the Bambu account goes back to the ones waiting to be assigned
-      db.prepare("UPDATE bambu_prints SET state = 'pending', print_id = NULL WHERE print_id = ?").run(id);
-      db.prepare('DELETE FROM prints WHERE id = ?').run(id);
-    }
+    const bambuIds = removePrint(printSnapshot(params.id));
+    // a print that came from the Bambu account goes back to the ones waiting to be assigned
+    for (const b of bambuIds) db.prepare("UPDATE bambu_prints SET state = 'pending', print_id = NULL WHERE id = ?").run(b);
     return { ok: true };
   })
 );
