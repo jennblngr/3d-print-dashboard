@@ -36,7 +36,9 @@ if (!parseHash(ADMIN_PASSWORD_HASH)) {
 mkdirSync(DATA_DIR, { recursive: true });
 const DB_FILE = path.join(DATA_DIR, 'app.db');
 const hadData = existsSync(DB_FILE);
-const db = new DatabaseSync(DB_FILE);
+// Several copies of the app can share this file (the preview environments): they wait for each
+// other instead of failing when two of them write at the same moment.
+const db = new DatabaseSync(DB_FILE, { timeout: 10_000 });
 
 function backup(reason) {
   const file = createBackup(db, DATA_DIR);
@@ -497,8 +499,22 @@ function syncBambu() {
   return bambuSyncing;
 }
 const syncBambuQuietly = () => syncBambu().catch(e => console.error(`Bambu sync failed: ${e.message}`));
-setInterval(syncBambuQuietly, BAMBU_SYNC_MS).unref();
-syncBambuQuietly();
+// When several copies of the app share one database (the preview environments), only one of them
+// reads the account per period: the unofficial interface is not called more often than by one app.
+function claimBambuSync() {
+  const now = Date.now();
+  return (
+    db
+      .prepare(
+        `INSERT INTO settings (key, value) VALUES ('bambu_sync_at', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value WHERE CAST(value AS INTEGER) <= ?`
+      )
+      .run(String(now), now - BAMBU_SYNC_MS + 30_000).changes > 0
+  );
+}
+const syncBambuOnSchedule = () => claimBambuSync() && syncBambuQuietly();
+setInterval(syncBambuOnSchedule, BAMBU_SYNC_MS).unref();
+syncBambuOnSchedule();
 
 function bambuHttpError(e) {
   if (!(e instanceof BambuError)) return e;
