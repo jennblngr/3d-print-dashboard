@@ -19,8 +19,14 @@ const localDay = iso => new Date(iso).toLocaleDateString('sv');
 const spoolName = s => [s.brand, s.material, s.variant, s.color_name].filter(Boolean).join(' ');
 const isLink = s => /^https?:\/\//i.test(s || '');
 const activeSpools = () => state.spools.filter(s => !s.archived);
-const spoolOptions = (spools, selected) =>
-  spools.map(s => `<option value="${s.id}" ${s.id === selected ? 'selected' : ''}>${h(spoolName(s))} (${Math.round(s.remaining_g)} g)</option>`).join('');
+const spoolOption = (s, selected) =>
+  `<option value="${s.id}" ${s.id === selected ? 'selected' : ''}>${h(spoolName(s))} (${Math.round(s.remaining_g)} g)</option>`;
+// Sealed spools come last, in a group of their own: picking one opens it.
+const spoolOptions = (spools, selected) => {
+  const sealed = spools.filter(s => s.sealed);
+  return spools.filter(s => !s.sealed).map(s => spoolOption(s, selected)).join('') +
+    (sealed.length ? `<optgroup label="${t('sealedGroup')}">${sealed.map(s => spoolOption(s, selected)).join('')}</optgroup>` : '');
+};
 
 let state = null;
 let tab = sessionStorage.getItem('tab') || 'spools';
@@ -374,13 +380,13 @@ function spoolCard(s) {
       <span class="meter"><i style="width:${pct}%"></i></span>
       <small><b class="qty">${Math.round(s.remaining_g)}</b> / ${Math.round(s.weight_g)} g · ${eur((s.price_cents / s.weight_g) * 1000)}/kg</small>
     </span>
-    ${s.archived ? `<span class="chip">${t('finished')}</span>` : ''}
+    ${s.archived ? `<span class="chip">${t('finished')}</span>` : s.sealed ? `<span class="chip">${t('sealedChip')}</span>` : ''}
   </button>`;
 }
 
 // `preset` prefills a new spool (scanned tag, or a product remembered from its barcode).
 function spoolDialog(spool, preset = {}) {
-  const s = { brand: '', material: 'PLA', color_name: '', color_hex: '#888888', weight_g: 1000, notes: '', ...preset, ...spool };
+  const s = { brand: '', material: 'PLA', color_name: '', color_hex: '#888888', weight_g: 1000, notes: '', sealed: 1, ...preset, ...spool };
   const price = s.price_cents != null ? (s.price_cents / 100).toFixed(2) : '';
   const body = `
     ${field('brand', t('brand'), s.brand, 'required maxlength="80"')}
@@ -400,12 +406,14 @@ function spoolDialog(spool, preset = {}) {
     ${field('barcode', t('barcode'), s.barcode ?? '', 'maxlength="500"')}
     ${field('code', t('code'), s.code ?? '', 'maxlength="500"')}
     <label>${t('notes')}<textarea name="notes" maxlength="1000" rows="2">${h(s.notes)}</textarea></label>
+    <label class="check"><input type="checkbox" name="sealed" ${s.sealed ? 'checked' : ''}>${t('sealed')}</label>
     ${s.id ? `<label class="check"><input type="checkbox" name="archived" ${s.archived ? 'checked' : ''}>${t('archived')}</label>
       <div class="delete-zone"><button type="button" class="danger" data-act="delSpool" data-id="${s.id}">${icons.trash}${t('delete')}</button></div>` : ''}`;
   openDialog(s.id ? t('editSpool') : t('newSpool'), body, async fd => {
     const data = Object.fromEntries(fd);
     data.price_cents = toCents(data.price);
     data.archived = fd.has('archived');
+    data.sealed = fd.has('sealed');
     await api(s.id ? 'PUT' : 'POST', s.id ? `/api/spools/${s.id}` : '/api/spools', data);
   });
 }
