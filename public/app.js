@@ -32,6 +32,7 @@ let state = null;
 let tab = sessionStorage.getItem('tab') || 'spools';
 let cleanup = null; // stops the camera owned by the open dialog
 let lineRow = () => '';
+let editedLines = []; // the filament of the print being edited, with the cost it was billed at
 let scanPreset = {}; // what the last scanned barcode prefills in a new spool
 
 document.documentElement.lang = lang;
@@ -187,7 +188,10 @@ function printCard(p, admin) {
       <strong class="amount">${eur(p.total_cents)}</strong>
     </div>
     <ul class="lines">${lines.join('')}</ul>
-    ${admin ? `<div class="bar end"><button class="danger" data-act="delPrint" data-id="${p.id}">${t('delete')}</button></div>` : ''}
+    ${admin ? `<div class="bar end">
+      <button data-act="editPrint" data-id="${p.id}">${t('edit')}</button>
+      <button class="danger" data-act="delPrint" data-id="${p.id}">${t('delete')}</button>
+    </div>` : ''}
   </article>`;
 }
 
@@ -502,48 +506,70 @@ async function scanDialog() {
   }
 }
 
-function printDialog(pre = {}) {
-  const spools = activeSpools();
-  const options = spoolOptions(spools, pre.spool_id);
-  lineRow = () => `<div class="line">
-    <select name="spool" aria-label="${t('filament')}">${options}</select>
-    <input name="grams" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="g" aria-label="${t('grams')}" required>
+// A filament line's value: a spool id, or for a print being edited whose spool was deleted
+// since, the label it was recorded with.
+const keptValue = label => `l:${label}`;
+
+// `edit` is the print being edited (its `edit` form, with `id`): the same form, prefilled.
+function printDialog(pre = {}, edit = null) {
+  const used = new Set(edit?.lines.map(l => l.spool_id));
+  // an archived spool the print used stays selectable
+  const spools = state.spools.filter(s => !s.archived || used.has(s.id));
+  const gone = edit?.lines.filter(l => l.spool_id == null) || [];
+  const options = selected =>
+    spoolOptions(spools, selected) + gone.map(l => `<option value="${h(keptValue(l.label))}" ${selected === keptValue(l.label) ? 'selected' : ''}>${h(l.label)} (${t('deletedSpool')})</option>`).join('');
+  lineRow = (selected = pre.spool_id, grams = '') => `<div class="line">
+    <select name="spool" aria-label="${t('filament')}">${options(selected)}</select>
+    <input name="grams" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="g" aria-label="${t('grams')}" value="${h(grams)}" required>
     <button type="button" class="icon" data-act="rmLine" aria-label="${t('delete')}">${icons.close}</button>
   </div>`;
+  const rows = edit
+    ? edit.lines.map(l => lineRow(l.spool_id ?? keptValue(l.label), l.grams)).join('')
+    : spools.length ? lineRow() : '';
+  const checked = id => (edit ? edit.person_ids.includes(id) : id === pre.person_id);
+  if (edit) pre = { title: edit.title, printed_at: edit.printed_at };
   const body = `
     <fieldset><legend>${t('forWhom')}</legend>
       ${state.people.map(p =>
-        `<label class="check"><input type="checkbox" name="person" value="${p.id}" ${p.id === pre.person_id ? 'checked' : ''}>${h(p.name)}</label>`).join('')}
-      <label class="check"><input type="checkbox" name="person" value="">${t('me')}</label>
+        `<label class="check"><input type="checkbox" name="person" value="${p.id}" ${checked(p.id) ? 'checked' : ''}>${h(p.name)}</label>`).join('')}
+      <label class="check"><input type="checkbox" name="person" value="" ${checked(null) ? 'checked' : ''}>${t('me')}</label>
     </fieldset>
     ${field('title', t('title'), pre.title || '', 'required maxlength="120"')}
     ${field('printed_at', t('date'), pre.printed_at || today(), 'type="date" required')}
     <fieldset><legend>${t('filament')}</legend>
-      <div id="lines">${spools.length ? lineRow() : ''}</div>
+      <div id="lines">${rows}</div>
       ${spools.length ? `<button type="button" class="ghost" data-act="addLine">${t('addFilament')}</button>` : ''}
     </fieldset>
     <div id="billing">
-      ${field('adjust', t('adjust'), '', 'inputmode="decimal"')}
-      ${field('adjust_note', t('adjustNote'), '', 'maxlength="200"')}
+      ${field('adjust', t('adjust'), edit?.adjust_cents ? (edit.adjust_cents / 100).toFixed(2) : '', 'inputmode="decimal"')}
+      ${field('adjust_note', t('adjustNote'), edit?.adjust_note || '', 'maxlength="200"')}
     </div>
     <p class="total" id="total"></p>
     <p class="hint" id="split" hidden></p>`;
-  openDialog(t('newPrint'), body, async (fd, form) => {
+  openDialog(t(edit ? 'editPrint' : 'newPrint'), body, async (fd, form) => {
     // an empty value is the owner's own part
     const people = fd.getAll('person').map(v => (v ? +v : null));
     if (!people.length) throw new Error(t('pickPerson'));
-    await api('POST', pre.bambu_id ? `/api/bambu/prints/${pre.bambu_id}/bill` : '/api/prints', {
+    const line = row => {
+      const value = $('select', row).value;
+      const grams = parseFloat($('input', row).value);
+      return value.startsWith('l:') ? { spool_id: null, label: value.slice(2), grams } : { spool_id: +value, grams };
+    };
+    const [method, url] = edit ? ['PUT', `/api/prints/${edit.id}`]
+      : ['POST', pre.bambu_id ? `/api/bambu/prints/${pre.bambu_id}/bill` : '/api/prints'];
+    await api(method, url, {
       person_ids: people,
       title: fd.get('title'),
       printed_at: fd.get('printed_at'),
       adjust_cents: toCents(fd.get('adjust')),
       adjust_note: fd.get('adjust_note'),
       wish_id: pre.wish_id,
-      lines: [...form.querySelectorAll('.line')].map(row => ({ spool_id: +$('select', row).value, grams: parseFloat($('input', row).value) })),
+      lines: [...form.querySelectorAll('.line')].map(line),
     });
   });
   const firstGrams = $('#lines input', dlg);
   if (pre.grams && firstGrams) firstGrams.value = pre.grams;
+  editedLines = edit?.lines || [];
   printTotal();
 }
 
@@ -587,11 +613,15 @@ function printTotal() {
   let cents = adjust;
   let part = Math.round(adjust / parts);
   for (const row of dlg.querySelectorAll('.line')) {
-    const spool = state.spools.find(s => s.id === +$('select', row).value);
-    if (!spool) continue;
+    const value = $('select', row).value;
     const grams = parseFloat($('input', row).value) || 0;
-    cents += Math.round((grams * spool.price_cents) / spool.weight_g);
-    part += Math.round(((grams / parts) * spool.price_cents) / spool.weight_g);
+    // filament the edited print already used keeps the price per gram it was billed at
+    const kept = editedLines.find(l => (l.spool_id == null ? keptValue(l.label) === value : String(l.spool_id) === value));
+    const spool = state.spools.find(s => s.id === +value);
+    const perGram = kept?.grams ? kept.cost_cents / kept.grams : spool && spool.price_cents / spool.weight_g;
+    if (perGram == null) continue;
+    cents += Math.round(grams * perGram);
+    part += Math.round((grams / parts) * perGram);
   }
   out.innerHTML = `<span>${t('total')}</span><span>${eur(cents)}</span>`;
   const split = $('#split', dlg);
@@ -645,6 +675,10 @@ const actions = {
   delSpool: id => remove(`/api/spools/${id}`),
   scan: scanDialog,
   print: () => printDialog(),
+  editPrint(id) {
+    const p = state.prints.find(x => x.id === id);
+    printDialog({}, { ...p.edit, id });
+  },
   delPrint: id => remove(`/api/prints/${id}`, state.prints.find(p => p.id === id)?.share_count > 1 ? 'confirmDeleteShared' : 'confirmDelete'),
   bambuBill(id) {
     const b = state.bambu_prints.find(x => x.id === id);

@@ -133,7 +133,12 @@ d'elles est violée, préviens-moi immédiatement.
   ou supprimée ensuite.
 - Coût = grammes × prix de la bobine ÷ poids de la bobine, plus un ajustement
   manuel. Ni électricité ni usure machine.
-- Une impression ne se modifie pas : on la supprime et on la ressaisit.
+- Une impression se modifie (tout : personnes, partage, date, filaments,
+  grammes, ajustement) ; le stock et les montants dus sont recalculés. Le
+  filament déjà utilisé garde le prix auquel il avait été facturé, même si la
+  bobine a changé de prix ou a été supprimée depuis ; un filament ajouté prend
+  le prix actuel de sa bobine. Le lien avec l'impression Bambu et le souhait
+  est conservé.
 - Une impression peut être « pour moi » (choix « Moi » dans la liste des
   personnes) : le stock baisse, personne n'est facturé, et son coût en filament
   s'additionne dans la ligne « Moi » de l'onglet Personnes. « Moi » n'est pas
