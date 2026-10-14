@@ -80,7 +80,8 @@ db.exec(`
     archived INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     barcode TEXT,
-    variant TEXT NOT NULL DEFAULT ''
+    variant TEXT NOT NULL DEFAULT '',
+    sealed INTEGER NOT NULL DEFAULT 0
   );
   -- what a product barcode stood for the last time a spool carrying it was saved
   CREATE TABLE IF NOT EXISTS products (
@@ -179,6 +180,10 @@ for (const table of ['spools', 'products']) {
   if (!db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === 'variant')) {
     db.exec(`ALTER TABLE ${table} ADD COLUMN variant TEXT NOT NULL DEFAULT ''`);
   }
+}
+// Databases created before spools could be marked as still vacuum-sealed: every spool was opened.
+if (!db.prepare('PRAGMA table_info(spools)').all().some(c => c.name === 'sealed')) {
+  db.exec('ALTER TABLE spools ADD COLUMN sealed INTEGER NOT NULL DEFAULT 0');
 }
 // Databases created before the owner could record prints for themselves: every print had to
 // belong to a person. SQLite cannot relax that in place, so the table is rebuilt, and the
@@ -377,6 +382,7 @@ function spoolInput(b) {
     b.archived ? 1 : 0,
     str(b.barcode, 500) || null,
     str(b.variant, 40),
+    b.sealed ? 1 : 0,
   ];
 }
 function saveSpool(values, fn) {
@@ -388,7 +394,7 @@ function saveSpool(values, fn) {
     throw e;
   }
   const [brand, material, colorName, colorHex, price, weight] = values;
-  const [barcode, variant] = values.slice(-2);
+  const [barcode, variant] = values.slice(10, 12);
   if (barcode) {
     db.prepare(
       'INSERT OR REPLACE INTO products (barcode, brand, material, color_name, color_hex, price_cents, weight_g, variant) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -549,7 +555,7 @@ function createPrint(body, previous = null) {
     for (const { spool, label, grams, cost } of lines) {
       db.prepare('INSERT INTO print_lines (print_id, spool_id, label, grams, cost_cents) VALUES (?, ?, ?, ?, ?)').run(id, spool?.id ?? null, label, grams, cost);
       if (!spool) continue;
-      db.prepare('UPDATE spools SET remaining_g = MAX(0, remaining_g - ?) WHERE id = ?').run(grams, spool.id);
+      db.prepare('UPDATE spools SET remaining_g = MAX(0, remaining_g - ?), sealed = 0 WHERE id = ?').run(grams, spool.id);
       setSetting('last_spool_id', spool.id);
     }
     firstId ??= id;
@@ -659,7 +665,7 @@ route('GET', '/api/state', 'admin', () => ({
      FROM bambu_prints WHERE state != 'billed' ORDER BY state = 'pending' DESC, ended_at DESC LIMIT 200`
   ).all(),
   last_spool_id: getSetting('last_spool_id'),
-  spools: db.prepare('SELECT * FROM spools ORDER BY archived, brand COLLATE NOCASE, material, variant, color_name').all(),
+  spools: db.prepare('SELECT * FROM spools ORDER BY archived, sealed, brand COLLATE NOCASE, material, variant, color_name').all(),
   products: db.prepare('SELECT * FROM products').all(),
   people: db.prepare(`SELECT pe.id, pe.name, pe.token, ${BALANCE_SQL} AS balance_cents FROM people pe ORDER BY pe.name COLLATE NOCASE`).all(),
   prints: listPrints(),
@@ -673,8 +679,8 @@ route('POST', '/api/spools', 'admin', ({ body }) => {
   const values = spoolInput(body);
   return saveSpool(values, () => ({
     id: db.prepare(
-      `INSERT INTO spools (brand, material, color_name, color_hex, price_cents, weight_g, remaining_g, code, notes, archived, barcode, variant)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO spools (brand, material, color_name, color_hex, price_cents, weight_g, remaining_g, code, notes, archived, barcode, variant, sealed)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(...values).lastInsertRowid,
   }));
 });
@@ -684,7 +690,7 @@ route('PUT', '/api/spools/:id', 'admin', ({ params, body }) => {
   saveSpool(values, () =>
     db.prepare(
       `UPDATE spools SET brand = ?, material = ?, color_name = ?, color_hex = ?, price_cents = ?, weight_g = ?,
-       remaining_g = ?, code = ?, notes = ?, archived = ?, barcode = ?, variant = ? WHERE id = ?`
+       remaining_g = ?, code = ?, notes = ?, archived = ?, barcode = ?, variant = ?, sealed = ? WHERE id = ?`
     ).run(...values, params.id)
   );
   return { ok: true };
@@ -760,7 +766,7 @@ route('POST', '/api/bambu/prints/:id/stock', 'admin', ({ params, body }) =>
     const grams = num(body.grams, 0.01, 100000, 'Grams');
     // what is recorded is what really left the spool, so that undoing gives back exactly that
     const taken = Math.min(grams, spool.remaining_g);
-    db.prepare('UPDATE spools SET remaining_g = remaining_g - ? WHERE id = ?').run(taken, spool.id);
+    db.prepare('UPDATE spools SET remaining_g = remaining_g - ?, sealed = 0 WHERE id = ?').run(taken, spool.id);
     db.prepare("UPDATE bambu_prints SET state = 'stock', spool_id = ?, grams = ? WHERE id = ?").run(spool.id, taken, params.id);
     setSetting('last_spool_id', spool.id);
     return { ok: true };
