@@ -1,5 +1,6 @@
 // Database backups: verified snapshots kept next to the data, in <data dir>/backups.
-import { mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { mkdirSync, readdirSync, renameSync, rmSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -37,10 +38,16 @@ export function createBackup(db, dataDir, prefix = 'app') {
   const dir = backupDir(dataDir);
   mkdirSync(dir, { recursive: true });
   const file = path.join(dir, `${prefix}-${new Date().toISOString().replace(/[:.]/g, '-')}.db`);
-  db.exec(`VACUUM INTO '${file.replaceAll("'", "''")}'`);
-  if (!isHealthy(file)) {
-    rmSync(file, { force: true });
-    throw new Error('the backup failed its integrity check');
+  // Written under a private name first: a backup only gets its real name once it is complete and
+  // checked, and two copies of the app sharing this folder never write to the same file.
+  const draft = path.join(dir, `.${randomBytes(6).toString('hex')}.tmp`);
+  try {
+    db.exec(`VACUUM INTO '${draft.replaceAll("'", "''")}'`);
+    if (!isHealthy(draft)) throw new Error('the backup failed its integrity check');
+    renameSync(draft, file);
+  } catch (e) {
+    rmSync(draft, { force: true });
+    throw e;
   }
   return file;
 }
@@ -60,6 +67,7 @@ export function pruneBackups(dataDir) {
     keep.add(byDay.get(day).at(-1));
   }
   for (const name of listBackups(dataDir)) {
-    if (!keep.has(name)) rmSync(path.join(backupDir(dataDir), name));
+    // force: another copy of the app sharing this folder may have removed it already
+    if (!keep.has(name)) rmSync(path.join(backupDir(dataDir), name), { force: true });
   }
 }
