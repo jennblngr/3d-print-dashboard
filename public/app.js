@@ -86,6 +86,13 @@ function closeDialog() {
 }
 dlg.addEventListener('close', runCleanup); // Escape key / back gesture
 dlg.addEventListener('input', printTotal);
+// What the scale shows, spool included, gives the filament left once the empty spool is taken off.
+dlg.addEventListener('input', e => {
+  const form = e.target.form;
+  if (!['scale_g', 'empty_g'].includes(e.target.name) || !form.scale_g.value) return;
+  const left = parseFloat(form.scale_g.value) - (parseFloat(form.empty_g.value) || 0);
+  if (Number.isFinite(left)) form.remaining_g.value = +Math.max(0, left).toFixed(2);
+});
 
 // onSubmit may return a function to run once the dialog is closed and data reloaded.
 function openDialog(title, bodyHtml, onSubmit, { submitLabel = t('save'), subtitle = '' } = {}) {
@@ -129,6 +136,7 @@ const icon = (shapes, size = 20, stroke = 1.8) =>
 const icons = {
   plus: icon('<path d="M12 5v14M5 12h14"/>'),
   scan: icon('<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 8v8M10.7 8v8M13.3 8v8M16 8v8"/>'),
+  settings: icon('<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>', 18),
   logout: icon('<path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 8l-4 4 4 4M6 12h9"/>', 18),
   trash: icon('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>', 18),
   refresh: icon('<path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/>', 18),
@@ -316,7 +324,10 @@ function renderAdmin() {
   setPage(`<header>
       <div class="top">
         <p class="appname">${mark}${t('appName')}</p>
-        <button class="link" data-act="logout">${icons.logout}${t('logout')}</button>
+        <span>
+          <button class="link icon" data-act="settings" aria-label="${t('settings')}" title="${t('settings')}">${icons.settings}</button>
+          <button class="link" data-act="logout">${icons.logout}${t('logout')}</button>
+        </span>
       </div>
       <h1>${t(tab)}</h1>
     </header>
@@ -406,6 +417,9 @@ function spoolDialog(spool, preset = {}) {
       ${field('price', t('price'), price, 'required inputmode="decimal"')}
       ${field('weight_g', t('weight'), s.weight_g, 'required type="number" min="1" step="any"')}
     </div>
+    ${field('empty_g', t('emptySpool'), s.empty_g ?? (state.empty_spool_g || ''), 'type="number" inputmode="decimal" min="0" max="5000" step="any"')}
+    ${field('scale_g', t('scaleWeight'), '', 'type="number" inputmode="decimal" min="0" step="any"')}
+    <p class="hint">${t('scaleHint')}</p>
     ${field('remaining_g', t('remaining'), s.remaining_g ?? '', 'type="number" min="0" step="any"')}
     ${field('barcode', t('barcode'), s.barcode ?? '', 'maxlength="500"')}
     ${field('code', t('code'), s.code ?? '', 'maxlength="500"')}
@@ -418,6 +432,7 @@ function spoolDialog(spool, preset = {}) {
     data.price_cents = toCents(data.price);
     data.archived = fd.has('archived');
     data.sealed = fd.has('sealed');
+    delete data.scale_g;
     await api(s.id ? 'PUT' : 'POST', s.id ? `/api/spools/${s.id}` : '/api/spools', data);
   });
 }
@@ -665,6 +680,10 @@ const actions = {
     sessionStorage.setItem('tab', id);
     renderAdmin();
     scrollTo(0, 0);
+  },
+  settings() {
+    openDialog(t('settings'), `${field('empty_spool_g', t('emptySpool'), state.empty_spool_g || '', 'type="number" inputmode="decimal" min="0" max="5000" step="any"')}
+      <p class="hint">${t('emptySpoolHint')}</p>`, fd => api('PUT', '/api/settings', { empty_spool_g: fd.get('empty_spool_g') || 0 }).then(() => null));
   },
   async logout() {
     await api('POST', '/api/logout');

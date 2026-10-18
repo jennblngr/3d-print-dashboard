@@ -61,6 +61,7 @@ body { margin: 0; background: var(--bg); }
 .app.guest { padding-bottom: 24px; }
 .app header { padding: 22px 20px 0; }
 .app header .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.app header .top > span { display: flex; align-items: center; gap: 4px; }
 .app .appname { display: flex; align-items: center; gap: 12px; margin: 0; font-size: 15px; font-weight: 600; color: var(--muted); }
 .app h1 { margin: 20px 0 4px; font-size: 44px; font-weight: 300; line-height: 1; letter-spacing: -0.025em; }
 .app h2 { margin: 32px 4px 12px; font-size: 22px; font-weight: 700; letter-spacing: -0.01em; }
