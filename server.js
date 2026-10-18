@@ -665,6 +665,7 @@ route('GET', '/api/state', 'admin', () => ({
      FROM bambu_prints WHERE state != 'billed' ORDER BY state = 'pending' DESC, ended_at DESC LIMIT 200`
   ).all(),
   last_spool_id: getSetting('last_spool_id'),
+  empty_spool_g: getSetting('empty_spool_g') ?? 0,
   spools: db.prepare('SELECT * FROM spools ORDER BY archived, sealed, brand COLLATE NOCASE, material, variant, color_name').all(),
   products: db.prepare('SELECT * FROM products').all(),
   people: db.prepare(`SELECT pe.id, pe.name, pe.token, ${BALANCE_SQL} AS balance_cents FROM people pe ORDER BY pe.name COLLATE NOCASE`).all(),
@@ -697,6 +698,12 @@ route('PUT', '/api/spools/:id', 'admin', ({ params, body }) => {
 });
 route('DELETE', '/api/spools/:id', 'admin', ({ params }) => {
   db.prepare('DELETE FROM spools WHERE id = ?').run(params.id);
+  return { ok: true };
+});
+
+// The weight of an empty spool, taken off what the scale shows to know the filament left.
+route('PUT', '/api/settings', 'admin', ({ body }) => {
+  setSetting('empty_spool_g', Math.round(num(body.empty_spool_g, 0, 5000, 'Empty spool weight') * 100) / 100);
   return { ok: true };
 });
 
