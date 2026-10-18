@@ -88,9 +88,10 @@ dlg.addEventListener('close', runCleanup); // Escape key / back gesture
 dlg.addEventListener('input', printTotal);
 // What the scale shows, spool included, gives the filament left once the empty spool is taken off.
 dlg.addEventListener('input', e => {
-  if (e.target.name !== 'scale_g' || e.target.value === '') return;
-  const left = parseFloat(e.target.value) - state.empty_spool_g;
-  if (Number.isFinite(left)) e.target.form.remaining_g.value = +Math.max(0, left).toFixed(2);
+  const form = e.target.form;
+  if (!['scale_g', 'empty_g'].includes(e.target.name) || !form.scale_g.value) return;
+  const left = parseFloat(form.scale_g.value) - (parseFloat(form.empty_g.value) || 0);
+  if (Number.isFinite(left)) form.remaining_g.value = +Math.max(0, left).toFixed(2);
 });
 
 // onSubmit may return a function to run once the dialog is closed and data reloaded.
@@ -416,8 +417,9 @@ function spoolDialog(spool, preset = {}) {
       ${field('price', t('price'), price, 'required inputmode="decimal"')}
       ${field('weight_g', t('weight'), s.weight_g, 'required type="number" min="1" step="any"')}
     </div>
-    ${state.empty_spool_g > 0 ? `${field('scale_g', t('scaleWeight'), '', 'type="number" inputmode="decimal" min="0" step="any"')}
-      <p class="hint">${t('scaleHint', { grams: state.empty_spool_g.toLocaleString(lang) })}</p>` : ''}
+    ${field('empty_g', t('emptySpool'), s.empty_g ?? (state.empty_spool_g || ''), 'type="number" inputmode="decimal" min="0" max="5000" step="any"')}
+    ${field('scale_g', t('scaleWeight'), '', 'type="number" inputmode="decimal" min="0" step="any"')}
+    <p class="hint">${t('scaleHint')}</p>
     ${field('remaining_g', t('remaining'), s.remaining_g ?? '', 'type="number" min="0" step="any"')}
     ${field('barcode', t('barcode'), s.barcode ?? '', 'maxlength="500"')}
     ${field('code', t('code'), s.code ?? '', 'maxlength="500"')}

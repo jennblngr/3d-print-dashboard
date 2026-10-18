@@ -81,7 +81,8 @@ db.exec(`
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     barcode TEXT,
     variant TEXT NOT NULL DEFAULT '',
-    sealed INTEGER NOT NULL DEFAULT 0
+    sealed INTEGER NOT NULL DEFAULT 0,
+    empty_g REAL
   );
   -- what a product barcode stood for the last time a spool carrying it was saved
   CREATE TABLE IF NOT EXISTS products (
@@ -184,6 +185,10 @@ for (const table of ['spools', 'products']) {
 // Databases created before spools could be marked as still vacuum-sealed: every spool was opened.
 if (!db.prepare('PRAGMA table_info(spools)').all().some(c => c.name === 'sealed')) {
   db.exec('ALTER TABLE spools ADD COLUMN sealed INTEGER NOT NULL DEFAULT 0');
+}
+// Databases created before each spool kept the weight of its empty spool: none is known yet.
+if (!db.prepare('PRAGMA table_info(spools)').all().some(c => c.name === 'empty_g')) {
+  db.exec('ALTER TABLE spools ADD COLUMN empty_g REAL');
 }
 // Databases created before the owner could record prints for themselves: every print had to
 // belong to a person. SQLite cannot relax that in place, so the table is rebuilt, and the
@@ -383,6 +388,7 @@ function spoolInput(b) {
     str(b.barcode, 500) || null,
     str(b.variant, 40),
     b.sealed ? 1 : 0,
+    b.empty_g == null || b.empty_g === '' ? null : num(b.empty_g, 0, 5000, 'Empty spool weight'),
   ];
 }
 function saveSpool(values, fn) {
@@ -680,8 +686,8 @@ route('POST', '/api/spools', 'admin', ({ body }) => {
   const values = spoolInput(body);
   return saveSpool(values, () => ({
     id: db.prepare(
-      `INSERT INTO spools (brand, material, color_name, color_hex, price_cents, weight_g, remaining_g, code, notes, archived, barcode, variant, sealed)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO spools (brand, material, color_name, color_hex, price_cents, weight_g, remaining_g, code, notes, archived, barcode, variant, sealed, empty_g)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(...values).lastInsertRowid,
   }));
 });
@@ -691,7 +697,7 @@ route('PUT', '/api/spools/:id', 'admin', ({ params, body }) => {
   saveSpool(values, () =>
     db.prepare(
       `UPDATE spools SET brand = ?, material = ?, color_name = ?, color_hex = ?, price_cents = ?, weight_g = ?,
-       remaining_g = ?, code = ?, notes = ?, archived = ?, barcode = ?, variant = ?, sealed = ? WHERE id = ?`
+       remaining_g = ?, code = ?, notes = ?, archived = ?, barcode = ?, variant = ?, sealed = ?, empty_g = ? WHERE id = ?`
     ).run(...values, params.id)
   );
   return { ok: true };
@@ -701,7 +707,7 @@ route('DELETE', '/api/spools/:id', 'admin', ({ params }) => {
   return { ok: true };
 });
 
-// The weight of an empty spool, taken off what the scale shows to know the filament left.
+// The weight of an empty spool offered by default to a new spool, which can keep its own.
 route('PUT', '/api/settings', 'admin', ({ body }) => {
   setSetting('empty_spool_g', Math.round(num(body.empty_spool_g, 0, 5000, 'Empty spool weight') * 100) / 100);
   return { ok: true };
