@@ -113,6 +113,8 @@ db.exec(`
   -- person_id is NULL for a print the owner made for themselves: stock moves, nobody is billed.
   -- A print shared between several people is stored as one print per person, each holding
   -- that person's part of the filament; group_id (the id of the first one) ties them together.
+  -- billing says whether a person's part counts in what they owe: 'pending' until the owner
+  -- decides, then 'billed' or 'gifted'. It means nothing on the owner's own part.
   CREATE TABLE IF NOT EXISTS prints (
     id INTEGER PRIMARY KEY,
     person_id INTEGER REFERENCES people(id) ON DELETE CASCADE,
@@ -122,7 +124,8 @@ db.exec(`
     adjust_note TEXT NOT NULL DEFAULT '',
     wish_id INTEGER REFERENCES wishes(id) ON DELETE SET NULL,
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    group_id INTEGER
+    group_id INTEGER,
+    billing TEXT NOT NULL DEFAULT 'billed'
   );
   -- label and cost are snapshots: they stay correct if the spool is edited or deleted later
   CREATE TABLE IF NOT EXISTS print_lines (
@@ -238,6 +241,38 @@ if (db.prepare('PRAGMA table_info(prints)').all().some(c => c.name === 'person_i
 if (!db.prepare('PRAGMA table_info(prints)').all().some(c => c.name === 'group_id')) {
   db.exec('ALTER TABLE prints ADD COLUMN group_id INTEGER');
 }
+// What a person owes: their billed prints, less their payments. A print waiting for the
+// owner's decision, or gifted, is left out.
+const printsSum = billing => `
+  COALESCE((SELECT SUM(l.cost_cents) FROM print_lines l JOIN prints p ON p.id = l.print_id WHERE p.person_id = pe.id AND p.billing = '${billing}'), 0)
+  + COALESCE((SELECT SUM(adjust_cents) FROM prints WHERE person_id = pe.id AND billing = '${billing}'), 0)`;
+const BALANCE_SQL = `${printsSum('billed')}
+  - COALESCE((SELECT SUM(amount_cents) FROM payments WHERE person_id = pe.id), 0)`;
+const BILLING = ['pending', 'billed', 'gifted'];
+
+// Databases created before a print could be assigned without being billed: every print
+// recorded until then was billed, so it stays billed and every balance stays the same.
+if (!db.prepare('PRAGMA table_info(prints)').all().some(c => c.name === 'billing')) {
+  const balances = () => JSON.stringify(db.prepare(`SELECT pe.id, ${BALANCE_SQL} AS b FROM people pe ORDER BY pe.id`).all());
+  db.exec('BEGIN');
+  try {
+    const before = JSON.stringify(db.prepare(
+      `SELECT pe.id,
+         COALESCE((SELECT SUM(l.cost_cents) FROM print_lines l JOIN prints p ON p.id = l.print_id WHERE p.person_id = pe.id), 0)
+         + COALESCE((SELECT SUM(adjust_cents) FROM prints WHERE person_id = pe.id), 0)
+         - COALESCE((SELECT SUM(amount_cents) FROM payments WHERE person_id = pe.id), 0) AS b
+       FROM people pe ORDER BY pe.id`
+    ).all());
+    db.exec("ALTER TABLE prints ADD COLUMN billing TEXT NOT NULL DEFAULT 'billed'");
+    if (balances() !== before) throw new Error('amounts due changed during the conversion');
+    db.exec('COMMIT');
+    console.log('Database upgraded: a print can now be assigned to a person before deciding to bill it.');
+  } catch (e) {
+    db.exec('ROLLBACK');
+    console.error(`Could not upgrade the prints table, not starting: ${e.message}`);
+    process.exit(1);
+  }
+}
 
 function tx(fn) {
   db.exec('BEGIN');
@@ -336,17 +371,14 @@ function loginFailed(key) {
 
 // ---------- queries ----------
 
-const BALANCE_SQL = `
-  COALESCE((SELECT SUM(l.cost_cents) FROM print_lines l JOIN prints p ON p.id = l.print_id WHERE p.person_id = pe.id), 0)
-  + COALESCE((SELECT SUM(adjust_cents) FROM prints WHERE person_id = pe.id), 0)
-  - COALESCE((SELECT SUM(amount_cents) FROM payments WHERE person_id = pe.id), 0)`;
 
 // `guestId` limits the list to one person's prints and leaves out who else shares them:
-// a guest learns that a print is shared, never with whom.
+// a guest learns that a print is shared, never with whom. A print the owner has not yet
+// decided to bill or gift stays out of the guest's sight.
 function listPrints(guestId) {
   const prints = db.prepare(
-    `SELECT p.id, p.person_id, pe.name AS person_name, p.title, p.printed_at, p.adjust_cents, p.adjust_note, p.group_id
-     FROM prints p LEFT JOIN people pe ON pe.id = p.person_id ${guestId ? 'WHERE p.person_id = ?' : ''}
+    `SELECT p.id, p.person_id, pe.name AS person_name, p.title, p.printed_at, p.adjust_cents, p.adjust_note, p.group_id, p.billing
+     FROM prints p LEFT JOIN people pe ON pe.id = p.person_id ${guestId ? "WHERE p.person_id = ? AND p.billing != 'pending'" : ''}
      ORDER BY p.printed_at DESC, p.id DESC`
   ).all(...(guestId ? [guestId] : []));
   const others = db.prepare(
@@ -490,22 +522,25 @@ function removePrint(snapshot) {
 }
 
 // Must run inside tx(): an edited print is recorded again from scratch, keeping what ties it
-// to the rest: its Bambu Lab print, the wish it answered, and when it was first recorded.
+// to the rest: its Bambu Lab print, the wish it answered, when it was first recorded, and
+// whether each person's part is billed. A person added to it waits for the owner's decision.
 function editPrint(id, body) {
   const before = printSnapshot(id);
   const bambuIds = removePrint(before);
   const { id: newId } = createPrint({ ...body, wish_id: null }, before.lines);
   const created = db.prepare('SELECT id, person_id FROM prints WHERE id = ? OR group_id = ?').all(newId, newId);
   for (const p of created) {
-    const wishId = before.prints.find(o => o.person_id !== null && o.person_id === p.person_id)?.wish_id ?? null;
-    db.prepare('UPDATE prints SET wish_id = ?, created_at = ? WHERE id = ?').run(wishId, before.prints[0].created_at, p.id);
+    const kept = before.prints.find(o => o.person_id !== null && o.person_id === p.person_id);
+    db.prepare('UPDATE prints SET wish_id = ?, created_at = ?, billing = ? WHERE id = ?')
+      .run(kept?.wish_id ?? null, before.prints[0].created_at, kept?.billing ?? (p.person_id === null ? 'billed' : 'pending'), p.id);
   }
   for (const b of bambuIds) db.prepare("UPDATE bambu_prints SET state = 'billed', print_id = ? WHERE id = ?").run(newId, b);
   return { id: newId };
 }
 
-// Must run inside tx(): takes a print's filament out of the spools and bills it.
+// Must run inside tx(): takes a print's filament out of the spools and assigns it.
 // `person_ids` lists who it is for; null stands for the owner, whose part is billed to nobody.
+// A person's part counts in what they owe only once the owner bills it (see /billing).
 // Several people share a print in equal parts: each gets a print of their own holding their
 // part of the filament and of the adjustment, so every amount is computed as for any print.
 // `previous` is only given when a print is edited: the filament it already used keeps the
@@ -552,8 +587,8 @@ function createPrint(body, previous = null) {
       }
     }
     const id = db.prepare(
-      'INSERT INTO prints (person_id, title, printed_at, adjust_cents, adjust_note, wish_id, group_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    ).run(person?.id ?? null, title, printedAt, person ? Math.round(adjust / parts) : 0, person ? note : '', wishId, groupId).lastInsertRowid;
+      'INSERT INTO prints (person_id, title, printed_at, adjust_cents, adjust_note, wish_id, group_id, billing) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+    ).run(person?.id ?? null, title, printedAt, person ? Math.round(adjust / parts) : 0, person ? note : '', wishId, groupId, person ? 'pending' : 'billed').lastInsertRowid;
     if (parts > 1 && groupId === null) {
       groupId = id;
       db.prepare('UPDATE prints SET group_id = ? WHERE id = ?').run(groupId, id);
@@ -674,7 +709,9 @@ route('GET', '/api/state', 'admin', () => ({
   empty_spool_g: getSetting('empty_spool_g') ?? 0,
   spools: db.prepare('SELECT * FROM spools ORDER BY archived, sealed, brand COLLATE NOCASE, material, variant, color_name').all(),
   products: db.prepare('SELECT * FROM products').all(),
-  people: db.prepare(`SELECT pe.id, pe.name, pe.token, ${BALANCE_SQL} AS balance_cents FROM people pe ORDER BY pe.name COLLATE NOCASE`).all(),
+  people: db.prepare(
+    `SELECT pe.id, pe.name, pe.token, ${BALANCE_SQL} AS balance_cents FROM people pe ORDER BY pe.name COLLATE NOCASE`
+  ).all(),
   prints: listPrints(),
   payments: db.prepare('SELECT * FROM payments ORDER BY paid_at DESC, id DESC').all(),
   wishes: db.prepare(
@@ -728,6 +765,14 @@ route('DELETE', '/api/people/:id', 'admin', ({ params }) => {
 
 route('POST', '/api/prints', 'admin', ({ body }) => tx(() => createPrint(body)));
 route('PUT', '/api/prints/:id', 'admin', ({ params, body }) => tx(() => editPrint(params.id, body)));
+// Bills a person's part of a print, gifts it, or puts it back to decide later. Each part of
+// a shared print is decided on its own.
+route('PUT', '/api/prints/:id/billing', 'admin', ({ params, body }) => {
+  if (!BILLING.includes(body.billing)) throw bad('Billing is invalid');
+  if (mustExist('prints', params.id).person_id === null) throw bad('Your own prints are billed to nobody');
+  db.prepare('UPDATE prints SET billing = ? WHERE id = ?').run(body.billing, params.id);
+  return { ok: true };
+});
 route('DELETE', '/api/prints/:id', 'admin', ({ params }) =>
   tx(() => {
     // a shared print goes as a whole: every person's part with it
@@ -765,7 +810,7 @@ route('POST', '/api/bambu/sync', 'admin', async () => {
 });
 route('POST', '/api/bambu/prints/:id/bill', 'admin', ({ params, body }) =>
   tx(() => {
-    if (pendingBambuPrint(params.id).failed) throw bad('A failed print cannot be billed');
+    if (pendingBambuPrint(params.id).failed) throw bad('A failed print cannot be assigned');
     const { id } = createPrint(body);
     db.prepare("UPDATE bambu_prints SET state = 'billed', print_id = ? WHERE id = ?").run(id, params.id);
     return { id };

@@ -179,12 +179,23 @@ function lineDot(l) {
 
 // A print without a person is one the owner made for themselves: it is billed to nobody.
 const isMine = p => p.person_id == null;
+const toDecide = p => !isMine(p) && p.billing === 'pending';
 const printOwner = p => (isMine(p) ? `${t('me')} · ${t('notBilledTag')}` : h(p.person_name));
 // The owner sees who shares a print; a guest only sees in how many parts it was split.
 function printSharing(p) {
   if (p.share_count < 2) return '';
   if (!p.shared_with) return ` · ${t('sharedCount', { count: p.share_count })}`;
   return ` · ${t('sharedWith', { names: p.shared_with.map(name => h(name ?? t('me'))).join(', ') })}`;
+}
+
+// A person's part of a print counts in what they owe only once the owner bills it.
+const BILLING_CHIP = { pending: 'requested', billed: 'accepted', gifted: 'printed' };
+const billingChip = p => (isMine(p) ? '' : `<span class="chip ${BILLING_CHIP[p.billing]}">${t('billing_' + p.billing)}</span>`);
+function billingButtons(p) {
+  if (isMine(p)) return '';
+  const set = (billing, label, cls = '') => `<button class="${cls}" data-act="setBilling" data-id="${p.id}" data-billing="${billing}">${t(label)}</button>`;
+  if (p.billing === 'pending') return set('billed', 'billIt', 'primary') + set('gifted', 'giftIt');
+  return p.billing === 'billed' ? set('gifted', 'giftIt') : set('billed', 'billIt');
 }
 
 function printCard(p, admin) {
@@ -195,8 +206,10 @@ function printCard(p, admin) {
       <div class="grow"><strong>${h(p.title)}</strong><small>${showDate(p.printed_at)}${admin ? ' · ' + printOwner(p) : ''}${printSharing(p)}</small></div>
       <strong class="amount">${eur(p.total_cents)}</strong>
     </div>
+    ${billingChip(p)}
     <ul class="lines">${lines.join('')}</ul>
     ${admin ? `<div class="bar end">
+      ${billingButtons(p)}
       <button data-act="editPrint" data-id="${p.id}">${t('edit')}</button>
       <button class="danger" data-act="delPrint" data-id="${p.id}">${t('delete')}</button>
     </div>` : ''}
@@ -268,9 +281,13 @@ const views = {
   prints() {
     const pending = state.bambu_prints.filter(b => b.state === 'pending');
     const handled = state.bambu_prints.filter(b => b.state !== 'pending');
+    const undecided = state.prints.filter(toDecide);
+    const decided = state.prints.filter(p => !toDecide(p));
     return `<div class="bar"><button class="primary" data-act="print">${icons.plus}${t('newPrint')}</button></div>
-      ${pending.length ? `<h2>${t('toAssign')}</h2>${pending.map(bambuCard).join('')}<h2>${t('prints')}</h2>` : ''}
-      ${state.prints.map(p => printCard(p, true)).join('') || empty('box')}
+      ${pending.length ? `<h2>${t('toAssign')}</h2>${pending.map(bambuCard).join('')}` : ''}
+      ${undecided.length ? `<h2>${t('toDecide')}</h2>${undecided.map(p => printCard(p, true)).join('')}` : ''}
+      ${pending.length || undecided.length ? `<h2>${t('prints')}</h2>` : ''}
+      ${decided.map(p => printCard(p, true)).join('') || empty('box')}
       ${handled.length ? `<details><summary>${t('notBilled', { count: handled.length })}</summary>
         <article class="card col"><ul class="lines">${handled.map(bambuRow).join('')}</ul></article></details>` : ''}
       ${bambuPanel()}`;
@@ -280,11 +297,18 @@ const views = {
       const b = p.balance_cents;
       const label = b > 0 ? t('owes', { amount: eur(b) }) : b < 0 ? t('credit', { amount: eur(-b) }) : t('settled');
       const pays = state.payments.filter(x => x.person_id === p.id);
+      // what their prints cost in all, billed, gifted or still to decide
+      const theirs = state.prints.filter(x => x.person_id === p.id);
+      const undecided = theirs.filter(toDecide).length;
+      const notes = [
+        theirs.length ? t('printsTotal', { amount: eur(theirs.reduce((sum, x) => sum + x.total_cents, 0)) }) : '',
+        undecided ? t('toDecideCount', { count: undecided }) : '',
+      ].filter(Boolean).join(' · ');
       const initial = (Array.from(p.name.trim())[0] || '').toUpperCase();
       return `<article class="card col person">
         <div class="row">
           <span class="avatar" style="--a: var(${AVATAR_TINTS[i % AVATAR_TINTS.length]})" aria-hidden="true">${h(initial)}</span>
-          <strong class="grow">${h(p.name)}</strong><span class="chip ${b > 0 ? 'declined' : 'printed'}">${label}</span>
+          <span class="grow"><strong>${h(p.name)}</strong>${notes ? `<small>${notes}</small>` : ''}</span><span class="chip ${b > 0 ? 'declined' : 'printed'}">${label}</span>
         </div>
         <div class="bar">
           <button data-act="invite" data-id="${p.id}">${icons.link}${t('inviteLink')}</button>
@@ -318,7 +342,7 @@ const views = {
 function renderAdmin() {
   if (!views[tab]) tab = 'spools';
   const badges = {
-    prints: state.bambu_prints.filter(b => b.state === 'pending').length,
+    prints: state.bambu_prints.filter(b => b.state === 'pending').length + state.prints.filter(toDecide).length,
     wishes: state.wishes.filter(w => w.status === 'requested').length,
   };
   setPage(`<header>
@@ -697,6 +721,10 @@ const actions = {
   editPrint(id) {
     const p = state.prints.find(x => x.id === id);
     printDialog({}, { ...p.edit, id });
+  },
+  async setBilling(id, el) {
+    await api('PUT', `/api/prints/${id}/billing`, { billing: el.dataset.billing });
+    await refresh();
   },
   delPrint: id => remove(`/api/prints/${id}`, state.prints.find(p => p.id === id)?.share_count > 1 ? 'confirmDeleteShared' : 'confirmDelete'),
   bambuBill(id) {
