@@ -147,6 +147,13 @@ d'elles est violée, préviens-moi immédiatement.
   « Moi » compris), toujours à parts égales : chacun reçoit sa part du filament
   et du coût, le stock baisse une seule fois du total. La supprimer la supprime
   pour tout le monde. Un proche voit que c'est partagé, jamais avec qui.
+- Une impression est d'abord associée à une ou plusieurs personnes, « à
+  décider » ; je choisis ensuite, part par part, de la facturer ou de
+  l'offrir, et je peux changer d'avis. Seules les parts facturées comptent
+  dans les montants dus. Un proche voit ses impressions facturées et
+  offertes, jamais celles encore à décider. L'onglet Personnes affiche le
+  coût total des impressions de chacun, quel que soit leur état. Les
+  impressions enregistrées avant cette règle sont toutes facturées.
 - Le code-barres désigne un produit (partagé par plusieurs bobines) ; le tag
   RFID désigne une seule bobine.
 - Tags TigerTag : un navigateur ne peut pas les lire (format brut, pas NDEF).
@@ -163,7 +170,7 @@ d'elles est violée, préviens-moi immédiatement.
   serveur lit l'historique de mon compte Bambu toutes les 5 minutes et range
   chaque impression terminée dans « À attribuer ». Rien n'est compté, ni
   montant ni stock, tant que je ne l'ai pas attribuée moi-même.
-- Trois issues pour une impression relevée : facturée à une personne (même
+- Trois issues pour une impression relevée : associée à une personne (même
   calcul que la saisie manuelle), « stock seulement » (pour moi : le stock
   baisse, personne n'est facturé), ou ignorée. Tout est annulable.
 - Une impression ratée n'est jamais facturée : elle diminue seulement le
