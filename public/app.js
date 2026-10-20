@@ -550,7 +550,14 @@ async function scanDialog() {
 const keptValue = label => `l:${label}`;
 
 // `edit` is the print being edited (its `edit` form, with `id`): the same form, prefilled.
-function printDialog(pre = {}, edit = null) {
+// `copy` is the id of a print picked in the new print form to start from: its form fills a
+// new print, dated today, at the spools' current prices, leaving out filament from a spool
+// deleted since.
+function printDialog(pre = {}, edit = null, copy = null) {
+  if (copy) edit = { ...state.prints.find(p => p.id === copy).edit, id: null, printed_at: today() };
+  if (copy) edit.lines = edit.lines.filter(l => l.spool_id != null);
+  // starting from a past print is only offered for a print entered by hand
+  const sources = edit?.id || pre.bambu_id || pre.wish_id ? [] : copySources();
   const used = new Set(edit?.lines.map(l => l.spool_id));
   // an archived spool the print used stays selectable
   const spools = state.spools.filter(s => !s.archived || used.has(s.id));
@@ -562,12 +569,16 @@ function printDialog(pre = {}, edit = null) {
     <input name="grams" type="number" inputmode="decimal" min="0.01" step="0.01" placeholder="g" aria-label="${t('grams')}" value="${h(grams)}" required>
     <button type="button" class="icon" data-act="rmLine" aria-label="${t('delete')}">${icons.close}</button>
   </div>`;
-  const rows = edit
+  const rows = edit?.lines.length
     ? edit.lines.map(l => lineRow(l.spool_id ?? keptValue(l.label), l.grams)).join('')
     : spools.length ? lineRow() : '';
   const checked = id => (edit ? edit.person_ids.includes(id) : id === pre.person_id);
   if (edit) pre = { title: edit.title, printed_at: edit.printed_at };
   const body = `
+    ${sources.length ? `<label>${t('copyFrom')}<select id="copyFrom">
+      <option value="">${t('copyNone')}</option>
+      ${sources.map(p => `<option value="${p.id}" ${p.id === copy ? 'selected' : ''}>${h(p.title)} · ${showDate(p.printed_at)} · ${h(p.who)}</option>`).join('')}
+    </select></label>` : ''}
     <fieldset><legend>${t('forWhom')}</legend>
       ${state.people.map(p =>
         `<label class="check"><input type="checkbox" name="person" value="${p.id}" ${checked(p.id) ? 'checked' : ''}>${h(p.name)}</label>`).join('')}
@@ -585,7 +596,7 @@ function printDialog(pre = {}, edit = null) {
     </div>
     <p class="total" id="total"></p>
     <p class="hint" id="split" hidden></p>`;
-  openDialog(t(edit ? 'editPrint' : 'newPrint'), body, async (fd, form) => {
+  openDialog(t(edit?.id ? 'editPrint' : 'newPrint'), body, async (fd, form) => {
     // an empty value is the owner's own part
     const people = fd.getAll('person').map(v => (v ? +v : null));
     if (!people.length) throw new Error(t('pickPerson'));
@@ -594,7 +605,7 @@ function printDialog(pre = {}, edit = null) {
       const grams = parseFloat($('input', row).value);
       return value.startsWith('l:') ? { spool_id: null, label: value.slice(2), grams } : { spool_id: +value, grams };
     };
-    const [method, url] = edit ? ['PUT', `/api/prints/${edit.id}`]
+    const [method, url] = edit?.id ? ['PUT', `/api/prints/${edit.id}`]
       : ['POST', pre.bambu_id ? `/api/bambu/prints/${pre.bambu_id}/bill` : '/api/prints'];
     await api(method, url, {
       person_ids: people,
@@ -608,8 +619,24 @@ function printDialog(pre = {}, edit = null) {
   });
   const firstGrams = $('#lines input', dlg);
   if (pre.grams && firstGrams) firstGrams.value = pre.grams;
-  editedLines = edit?.lines || [];
+  editedLines = (!copy && edit?.lines) || [];
+  const from = $('#copyFrom', dlg);
+  if (from) from.onchange = () => printDialog({}, null, +from.value || null);
   printTotal();
+}
+
+// The past prints a new one can start from, newest first, a shared print listed once.
+function copySources() {
+  const seen = new Set();
+  return state.prints.filter(p => {
+    const key = JSON.stringify(p.edit);
+    return !seen.has(key) && seen.add(key);
+  }).map(p => ({
+    id: p.id,
+    title: p.title,
+    printed_at: p.printed_at,
+    who: p.edit.person_ids.map(id => (id === null ? t('me') : state.people.find(x => x.id === id)?.name)).join(', '),
+  })).sort((a, b) => b.printed_at.localeCompare(a.printed_at) || b.id - a.id);
 }
 
 // Filament that goes on nobody's bill: a failed print, or one the owner made for themselves.
