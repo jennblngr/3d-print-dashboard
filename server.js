@@ -298,13 +298,13 @@ const bad = msg => new HttpError(400, msg);
 
 function str(v, max, name) {
   const s = typeof v === 'string' ? v.trim() : '';
-  if (s.length > max) throw bad(`${name || 'Text'} is too long`);
-  if (name && !s) throw bad(`${name} is required`);
+  if (s.length > max) throw bad(name ? `Champ « ${name} » trop long` : 'Texte trop long');
+  if (name && !s) throw bad(`Champ « ${name} » obligatoire`);
   return s;
 }
 function num(v, min, max, name) {
   const n = typeof v === 'string' ? parseFloat(v) : v;
-  if (typeof n !== 'number' || !Number.isFinite(n) || n < min || n > max) throw bad(`${name} is invalid`);
+  if (typeof n !== 'number' || !Number.isFinite(n) || n < min || n > max) throw bad(`Champ « ${name} » invalide`);
   return n;
 }
 const int = (v, min, max, name) => Math.round(num(v, min, max, name));
@@ -405,22 +405,22 @@ function listPrints(guestId) {
 }
 
 function spoolInput(b) {
-  const weight = num(b.weight_g, 1, 100000, 'Weight');
+  const weight = num(b.weight_g, 1, 100000, 'Poids');
   return [
-    str(b.brand, 80, 'Brand'),
+    str(b.brand, 80, 'Marque'),
     str(b.material, 40),
     str(b.color_name, 60),
     /^#[0-9a-f]{6}$/i.test(b.color_hex) ? b.color_hex : '#888888',
-    int(b.price_cents, 0, 10000000, 'Price'),
+    int(b.price_cents, 0, 10000000, 'Prix'),
     weight,
-    b.remaining_g == null || b.remaining_g === '' ? weight : num(b.remaining_g, -100000, 100000, 'Remaining weight'),
+    b.remaining_g == null || b.remaining_g === '' ? weight : num(b.remaining_g, -100000, 100000, 'Restant'),
     str(b.code, 500) || null,
     str(b.notes, 1000),
     b.archived ? 1 : 0,
     str(b.barcode, 500) || null,
     str(b.variant, 40),
     b.sealed ? 1 : 0,
-    b.empty_g == null || b.empty_g === '' ? null : num(b.empty_g, 0, 5000, 'Empty spool weight'),
+    b.empty_g == null || b.empty_g === '' ? null : num(b.empty_g, 0, 5000, 'Poids de la bobine vide'),
   ];
 }
 function saveSpool(values, fn) {
@@ -428,7 +428,7 @@ function saveSpool(values, fn) {
   try {
     result = fn();
   } catch (e) {
-    if (String(e.message).includes('UNIQUE')) throw new HttpError(409, 'Another spool already uses this RFID tag');
+    if (String(e.message).includes('UNIQUE')) throw new HttpError(409, 'Une autre bobine utilise déjà ce tag RFID');
     throw e;
   }
   const [brand, material, colorName, colorHex, price, weight] = values;
@@ -442,7 +442,7 @@ function saveSpool(values, fn) {
 }
 function mustExist(table, id) {
   const row = db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
-  if (!row) throw new HttpError(404, 'Not found');
+  if (!row) throw new HttpError(404, 'Introuvable');
   return row;
 }
 
@@ -548,32 +548,32 @@ function editPrint(id, body) {
 function createPrint(body, previous = null) {
   const asked = Array.isArray(body.person_ids) ? body.person_ids.slice(0, 50) : [body.person_id];
   const ids = [...new Set(asked.map(v => {
-    if (v === undefined) throw bad('Person is required');
-    return v === null ? null : int(v, 1, Number.MAX_SAFE_INTEGER, 'Person');
+    if (v === undefined) throw bad('Choisissez une personne');
+    return v === null ? null : int(v, 1, Number.MAX_SAFE_INTEGER, 'Personne');
   }))];
-  if (!ids.length) throw bad('Person is required');
+  if (!ids.length) throw bad('Choisissez une personne');
   const people = ids.map(id => (id === null ? null : mustExist('people', id)));
   const parts = people.length;
-  const title = str(body.title, 120, 'Title');
+  const title = str(body.title, 120, 'Titre');
   const printedAt = day(body.printed_at);
   // an adjustment is a billing matter: it means nothing on a part nobody pays for
   const billed = people.some(Boolean);
-  const adjust = billed && body.adjust_cents ? int(body.adjust_cents, -10000000, 10000000, 'Adjustment') : 0;
+  const adjust = billed && body.adjust_cents ? int(body.adjust_cents, -10000000, 10000000, 'Ajustement') : 0;
   const note = str(body.adjust_note, 200);
   const lines = (Array.isArray(body.lines) ? body.lines.slice(0, 32) : []).map(line => {
-    const grams = num(line?.grams, 0.01, 100000, 'Grams') / parts;
+    const grams = num(line?.grams, 0.01, 100000, 'Grammes') / parts;
     // a line kept from the print being edited whose spool was deleted since: no stock to move
     if (line.spool_id == null && previous) {
       const kept = previous.get(lineKey(null, line.label));
-      if (!kept) throw bad('Spool is required');
+      if (!kept) throw bad('Choisissez une bobine');
       return { spool: null, label: kept.label, grams, cost: lineCost(kept, null, grams, parts) };
     }
-    const spool = mustExist('spools', int(line.spool_id, 1, Number.MAX_SAFE_INTEGER, 'Spool'));
+    const spool = mustExist('spools', int(line.spool_id, 1, Number.MAX_SAFE_INTEGER, 'Bobine'));
     const label = spoolLabel(spool);
     const kept = previous?.get(lineKey(spool.id));
     return { spool, label, grams, cost: kept ? lineCost(kept, spool, grams, parts) : spoolCost(spool, grams) };
   });
-  if (!lines.length && !adjust) throw bad(billed ? 'Add at least one filament or an adjustment' : 'Add at least one filament');
+  if (!lines.length && !adjust) throw bad(billed ? 'Ajoutez au moins un filament ou un ajustement' : 'Ajoutez au moins un filament');
 
   let firstId = null;
   let groupId = null;
@@ -662,11 +662,11 @@ syncBambuOnSchedule();
 
 function bambuHttpError(e) {
   if (!(e instanceof BambuError)) return e;
-  return new HttpError(502, e.reason === 'unreachable' ? 'Bambu Lab cannot be reached, try again later' : 'Bambu Lab refused: check the email address and the code');
+  return new HttpError(502, e.reason === 'unreachable' ? 'Bambu Lab est injoignable, réessayez plus tard' : 'Bambu Lab a refusé : vérifiez l’adresse e-mail et le code');
 }
 function pendingBambuPrint(id) {
   const row = mustExist('bambu_prints', id);
-  if (row.state !== 'pending') throw new HttpError(409, 'This print was already handled');
+  if (row.state !== 'pending') throw new HttpError(409, 'Cette impression a déjà été traitée');
   return row;
 }
 
@@ -680,11 +680,11 @@ function route(method, pattern, role, fn) {
 
 route('POST', '/api/login', 'public', async ({ req, res, body }) => {
   const key = clientKey(req);
-  if (loginBlocked(key)) throw new HttpError(429, 'Too many attempts, try again later');
+  if (loginBlocked(key)) throw new HttpError(429, 'Trop de tentatives, réessayez plus tard');
   const password = typeof body.password === 'string' ? body.password.slice(0, 1000) : '';
   if (!(await verifyPassword(password, ADMIN_PASSWORD_HASH))) {
     loginFailed(key);
-    throw new HttpError(401, 'Wrong password');
+    throw new HttpError(401, 'Mot de passe incorrect');
   }
   failures.delete(key);
   const token = newToken();
@@ -748,12 +748,12 @@ route('DELETE', '/api/spools/:id', 'admin', ({ params }) => {
 
 // The weight of an empty spool offered by default to a new spool, which can keep its own.
 route('PUT', '/api/settings', 'admin', ({ body }) => {
-  setSetting('empty_spool_g', Math.round(num(body.empty_spool_g, 0, 5000, 'Empty spool weight') * 100) / 100);
+  setSetting('empty_spool_g', Math.round(num(body.empty_spool_g, 0, 5000, 'Poids de la bobine vide') * 100) / 100);
   return { ok: true };
 });
 
 route('POST', '/api/people', 'admin', ({ body }) => ({
-  id: db.prepare('INSERT INTO people (name, token) VALUES (?, ?)').run(str(body.name, 60, 'Name'), newToken()).lastInsertRowid,
+  id: db.prepare('INSERT INTO people (name, token) VALUES (?, ?)').run(str(body.name, 60, 'Nom'), newToken()).lastInsertRowid,
 }));
 route('POST', '/api/people/:id/token', 'admin', ({ params }) => {
   mustExist('people', params.id);
@@ -770,8 +770,8 @@ route('PUT', '/api/prints/:id', 'admin', ({ params, body }) => tx(() => editPrin
 // Bills a person's part of a print, gifts it, or puts it back to decide later. Each part of
 // a shared print is decided on its own.
 route('PUT', '/api/prints/:id/billing', 'admin', ({ params, body }) => {
-  if (!BILLING.includes(body.billing)) throw bad('Billing is invalid');
-  if (mustExist('prints', params.id).person_id === null) throw bad('Your own prints are billed to nobody');
+  if (!BILLING.includes(body.billing)) throw bad('Facturation invalide');
+  if (mustExist('prints', params.id).person_id === null) throw bad('Vos propres impressions ne sont facturées à personne');
   db.prepare('UPDATE prints SET billing = ? WHERE id = ?').run(body.billing, params.id);
   return { ok: true };
 });
@@ -786,13 +786,13 @@ route('DELETE', '/api/prints/:id', 'admin', ({ params }) =>
 );
 
 route('POST', '/api/bambu/code', 'admin', async ({ body }) => {
-  await requestCode(str(body.email, 200, 'Email')).catch(e => {
+  await requestCode(str(body.email, 200, 'E-mail')).catch(e => {
     throw bambuHttpError(e);
   });
   return { ok: true };
 });
 route('POST', '/api/bambu/login', 'admin', async ({ body }) => {
-  const email = str(body.email, 200, 'Email');
+  const email = str(body.email, 200, 'E-mail');
   const code = str(body.code, 12, 'Code');
   const { token, expiresAt } = await bambuLogin(email, code).catch(e => {
     throw bambuHttpError(e);
@@ -812,7 +812,7 @@ route('POST', '/api/bambu/sync', 'admin', async () => {
 });
 route('POST', '/api/bambu/prints/:id/bill', 'admin', ({ params, body }) =>
   tx(() => {
-    if (pendingBambuPrint(params.id).failed) throw bad('A failed print cannot be assigned');
+    if (pendingBambuPrint(params.id).failed) throw bad('Une impression ratée ne peut pas être attribuée');
     const { id } = createPrint(body);
     db.prepare("UPDATE bambu_prints SET state = 'billed', print_id = ? WHERE id = ?").run(id, params.id);
     return { id };
@@ -822,8 +822,8 @@ route('POST', '/api/bambu/prints/:id/bill', 'admin', ({ params, body }) =>
 route('POST', '/api/bambu/prints/:id/stock', 'admin', ({ params, body }) =>
   tx(() => {
     pendingBambuPrint(params.id);
-    const spool = mustExist('spools', int(body.spool_id, 1, Number.MAX_SAFE_INTEGER, 'Spool'));
-    const grams = num(body.grams, 0.01, 100000, 'Grams');
+    const spool = mustExist('spools', int(body.spool_id, 1, Number.MAX_SAFE_INTEGER, 'Bobine'));
+    const grams = num(body.grams, 0.01, 100000, 'Grammes');
     // as for any print, the spool may go below 0: undoing gives back exactly these grams
     db.prepare('UPDATE spools SET remaining_g = remaining_g - ?, sealed = 0 WHERE id = ?').run(grams, spool.id);
     db.prepare("UPDATE bambu_prints SET state = 'stock', spool_id = ?, grams = ? WHERE id = ?").run(spool.id, grams, params.id);
@@ -840,7 +840,7 @@ route('POST', '/api/bambu/prints/:id/ignore', 'admin', ({ params }) => {
 route('POST', '/api/bambu/prints/:id/reset', 'admin', ({ params }) =>
   tx(() => {
     const row = mustExist('bambu_prints', params.id);
-    if (row.state !== 'stock' && row.state !== 'ignored') throw new HttpError(409, 'This print cannot be put back');
+    if (row.state !== 'stock' && row.state !== 'ignored') throw new HttpError(409, 'Cette impression ne peut pas être remise à attribuer');
     if (row.state === 'stock' && row.spool_id) {
       db.prepare('UPDATE spools SET remaining_g = remaining_g + ? WHERE id = ?').run(row.grams, row.spool_id);
     }
@@ -850,10 +850,10 @@ route('POST', '/api/bambu/prints/:id/reset', 'admin', ({ params }) =>
 );
 
 route('POST', '/api/payments', 'admin', ({ body }) => {
-  const person = mustExist('people', int(body.person_id, 1, Number.MAX_SAFE_INTEGER, 'Person'));
+  const person = mustExist('people', int(body.person_id, 1, Number.MAX_SAFE_INTEGER, 'Personne'));
   return {
     id: db.prepare('INSERT INTO payments (person_id, amount_cents, paid_at, note) VALUES (?, ?, ?, ?)').run(
-      person.id, int(body.amount_cents, 1, 10000000, 'Amount'), day(body.paid_at), str(body.note, 200)
+      person.id, int(body.amount_cents, 1, 10000000, 'Montant'), day(body.paid_at), str(body.note, 200)
     ).lastInsertRowid,
   };
 });
@@ -863,7 +863,7 @@ route('DELETE', '/api/payments/:id', 'admin', ({ params }) => {
 });
 
 route('PUT', '/api/wishes/:id', 'admin', ({ params, body }) => {
-  if (!['requested', 'accepted', 'printed', 'declined'].includes(body.status)) throw bad('Status is invalid');
+  if (!['requested', 'accepted', 'printed', 'declined'].includes(body.status)) throw bad('Statut invalide');
   mustExist('wishes', params.id);
   db.prepare('UPDATE wishes SET status = ? WHERE id = ?').run(body.status, params.id);
   return { ok: true };
@@ -883,12 +883,12 @@ route('GET', '/api/my', 'guest', ({ person }) => ({
 }));
 route('POST', '/api/my/wishes', 'guest', ({ person, body }) => {
   const open = db.prepare("SELECT COUNT(*) AS n FROM wishes WHERE person_id = ? AND status = 'requested'").get(person.id).n;
-  if (open >= 30) throw bad('Too many pending requests');
+  if (open >= 30) throw bad('Trop de demandes en attente');
   const url = str(body.url, 500);
-  if (url && !/^https?:\/\//i.test(url)) throw bad('The link must start with http:// or https://');
+  if (url && !/^https?:\/\//i.test(url)) throw bad('Le lien doit commencer par http:// ou https://');
   return {
     id: db.prepare('INSERT INTO wishes (person_id, title, url, note) VALUES (?, ?, ?, ?)').run(
-      person.id, str(body.title, 120, 'Title'), url, str(body.note, 500)
+      person.id, str(body.title, 120, 'Titre'), url, str(body.note, 500)
     ).lastInsertRowid,
   };
 });
@@ -911,8 +911,8 @@ const INDEX = readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8')
 // The manifest is per invite link so that an installed guest app reopens on the guest's own page.
 function manifest(guestToken) {
   return JSON.stringify({
-    name: '3D Print Dashboard',
-    short_name: '3D Prints',
+    name: 'Tableau de bord 3D',
+    short_name: 'Impressions 3D',
     start_url: guestToken ? `/g/${guestToken}` : '/',
     scope: '/',
     display: 'standalone',
@@ -937,7 +937,7 @@ function readBody(req) {
     req.on('data', c => {
       size += c.length;
       if (size > 100_000) {
-        reject(new HttpError(413, 'Request too large'));
+        reject(new HttpError(413, 'Requête trop volumineuse'));
         req.destroy();
       } else chunks.push(c);
     });
@@ -947,7 +947,7 @@ function readBody(req) {
         const data = JSON.parse(Buffer.concat(chunks).toString('utf8'));
         resolve(data && typeof data === 'object' ? data : {});
       } catch {
-        reject(bad('Invalid JSON'));
+        reject(bad('Données invalides'));
       }
     });
     req.on('error', reject);
@@ -971,7 +971,7 @@ async function handle(req, res) {
   const isWrite = req.method !== 'GET' && req.method !== 'HEAD';
   if (tooManyRequests(client) || (isWrite && tooManyWrites(client))) {
     res.setHeader('Retry-After', '60');
-    throw new HttpError(429, 'Too many requests, wait a minute and try again');
+    throw new HttpError(429, 'Trop de requêtes, patientez une minute puis réessayez');
   }
 
   if (p.startsWith('/api/')) {
@@ -980,15 +980,15 @@ async function handle(req, res) {
       if (!m) continue;
       const params = Object.fromEntries(Object.entries(m.groups || {}).map(([k, v]) => [k, +v]));
       const ctx = { req, res, params, person: null, body: {} };
-      if (r.role === 'admin' && !isAdmin(req)) throw new HttpError(401, 'Not signed in');
-      if (r.role === 'guest' && !(ctx.person = guestOf(req))) throw new HttpError(401, 'Invalid invite link');
+      if (r.role === 'admin' && !isAdmin(req)) throw new HttpError(401, 'Non connecté');
+      if (r.role === 'guest' && !(ctx.person = guestOf(req))) throw new HttpError(401, 'Lien d’invitation invalide');
       if (req.method !== 'GET') ctx.body = await readBody(req);
       return send(res, 200, 'application/json', JSON.stringify(await r.fn(ctx)));
     }
-    throw new HttpError(404, 'Not found');
+    throw new HttpError(404, 'Introuvable');
   }
 
-  if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Method not allowed');
+  if (req.method !== 'GET' && req.method !== 'HEAD') throw new HttpError(405, 'Méthode non autorisée');
   const guest = /^\/g\/([\w-]{10,64})$/.exec(p);
   if (p === '/' || guest) {
     const href = '/manifest.webmanifest' + (guest ? `?g=${guest[1]}` : '');
@@ -1000,7 +1000,7 @@ async function handle(req, res) {
   }
   const file = STATIC.get(p);
   if (file) return send(res, 200, file.type, file.data);
-  throw new HttpError(404, 'Not found');
+  throw new HttpError(404, 'Introuvable');
 }
 
 http
@@ -1008,7 +1008,7 @@ http
     handle(req, res).catch(e => {
       if (!e.status) console.error(e);
       if (res.headersSent) return res.end();
-      send(res, e.status || 500, 'application/json', JSON.stringify({ error: e.status ? e.message : 'Server error' }));
+      send(res, e.status || 500, 'application/json', JSON.stringify({ error: e.status ? e.message : 'Erreur du serveur' }));
     });
   })
   .listen(PORT, () => console.log(`3D Print Dashboard listening on port ${PORT}`));
