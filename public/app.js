@@ -11,6 +11,7 @@ const guestToken = (location.pathname.match(/^\/g\/([\w-]+)$/) || [])[1];
 
 const money = new Intl.NumberFormat(lang, { style: 'currency', currency: 'EUR' });
 const eur = cents => money.format(cents / 100);
+const fmtGrams = (g, digits = 2) => g.toLocaleString(lang, { maximumFractionDigits: digits });
 const h = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const toCents = v => Math.round(parseFloat(String(v || '0').replace(',', '.')) * 100) || 0;
 const today = () => new Date().toLocaleDateString('sv'); // YYYY-MM-DD in local time
@@ -199,7 +200,7 @@ function billingButtons(p) {
 }
 
 function printCard(p, admin) {
-  const lines = p.lines.map(l => `<li><span>${lineDot(l)}${h(l.label)} · ${+l.grams.toFixed(2)} g</span><span>${eur(l.cost_cents)}</span></li>`);
+  const lines = p.lines.map(l => `<li><span>${lineDot(l)}${h(l.label)} · ${fmtGrams(l.grams)} g</span><span>${eur(l.cost_cents)}</span></li>`);
   if (p.adjust_cents) lines.push(`<li class="adj"><span>${h(p.adjust_note || t('adjustment'))}</span><span>${eur(p.adjust_cents)}</span></li>`);
   return `<article class="card col print">
     <div class="row">
@@ -366,11 +367,11 @@ function renderAdmin() {
 
 // A print read from the Bambu Lab account, waiting for the owner to say what it was for.
 function bambuCard(b) {
-  const planned = b.failed ? ` · ${t('plannedGrams', { grams: +b.planned_g.toFixed(1) })}` : '';
+  const planned = b.failed ? ` · ${t('plannedGrams', { grams: fmtGrams(b.planned_g, 1) })}` : '';
   return `<article class="card col todo ${b.failed ? 'failed' : ''}">
     <div class="row">
       <div class="grow"><strong>${h(b.title)}</strong>
-        <small>${showDate(localDay(b.ended_at))}${b.material ? ' · ' + h(b.material) : ''} · ${+b.suggested_g.toFixed(1)} g${planned}</small></div>
+        <small>${showDate(localDay(b.ended_at))}${b.material ? ' · ' + h(b.material) : ''} · ${fmtGrams(b.suggested_g, 1)} g${planned}</small></div>
       ${b.failed ? `<span class="chip declined">${t('failedPrint')}</span>` : ''}
     </div>
     <div class="bar choices">
@@ -382,7 +383,7 @@ function bambuCard(b) {
 
 function bambuRow(b) {
   const spool = state.spools.find(s => s.id === b.spool_id);
-  const what = b.state === 'ignored' ? t('ignored') : `${+b.grams.toFixed(2)} g${spool ? ' · ' + h(spoolName(spool)) : ''}`;
+  const what = b.state === 'ignored' ? t('ignored') : `${fmtGrams(b.grams)} g${spool ? ' · ' + h(spoolName(spool)) : ''}`;
   return `<li>
     <span>${showDate(localDay(b.ended_at))} · ${h(b.title)} · ${what}</span>
     <span><button class="link" data-act="bambuReset" data-id="${b.id}">${t('putBack')}</button></span>
@@ -704,7 +705,7 @@ function lineHints() {
     used.set(spool.id, (used.get(spool.id) || 0) + grams);
     const extra = +(grams - left).toFixed(2);
     if (extra <= 0) continue;
-    row.insertAdjacentHTML('afterend', `<p class="hint" data-runs-out>${t('spoolRunsOut', { left, extra })}
+    row.insertAdjacentHTML('afterend', `<p class="hint" data-runs-out>${t('spoolRunsOut', { left: fmtGrams(left), extra: fmtGrams(extra) })}
       <button type="button" class="ghost" data-act="splitLine" data-left="${left}" data-extra="${extra}">${t('putRestElsewhere')}</button></p>`);
   }
 }

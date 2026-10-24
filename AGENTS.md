@@ -19,8 +19,9 @@
   discute en français.
 - Même règle sur le dépôt : commits, titres d'issues et de pull requests en
   anglais.
-- L'interface de l'application existe en français et en anglais : tout nouveau
-  texte affiché doit être ajouté dans les deux langues.
+- L'interface de l'application est uniquement en français (depuis le
+  24/10/2026), messages d'erreur du serveur compris. Le code et les
+  commentaires restent en anglais.
 
 ## Comment je veux qu'on travaille
 - Je pilote ce projet SANS lire le code. Je supervise le produit, pas les
