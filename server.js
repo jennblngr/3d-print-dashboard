@@ -897,23 +897,33 @@ route('DELETE', '/api/my/wishes/:id', 'guest', ({ person, params }) => {
 
 const TYPES = { '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.woff2': 'font/woff2' };
 const STATIC = new Map(
-  ['style.css', 'app.js', 'i18n.js', 'tigertag.js', 'tigertag-db.js', 'sw.js', 'icon-192.png', 'icon-512.png', 'icon-maskable-192.png', 'icon-maskable-512.png', 'fonts/urbanist.woff2'].map(name => [
+  ['style.css', 'theme.js', 'app.js', 'select.js', 'i18n.js', 'tigertag.js', 'tigertag-db.js', 'sw.js', 'icon-192.png', 'icon-512.png', 'icon-maskable-192.png', 'icon-maskable-512.png', 'fonts/geist-latin.woff2', 'fonts/geist-latin-ext.woff2', 'fonts/geist-mono-latin.woff2', 'fonts/geist-mono-latin-ext.woff2'].map(name => [
     '/' + name,
     { type: TYPES[path.extname(name)], data: readFileSync(path.join(__dirname, 'public', name)) },
   ])
 );
+// The Lucide icons the interface uses (see `icon` in public/app.js), gathered at startup from the
+// lucide-static package into one small sprite: the browser loads 17 icons, not the whole set.
+const ICONS = ['plus', 'scan-barcode', 'settings', 'log-out', 'sun', 'moon', 'sun-moon', 'trash-2', 'refresh-cw', 'link', 'euro', 'x', 'unlink', 'disc-3', 'box', 'users', 'heart'];
+const LUCIDE = path.join(__dirname, 'node_modules', 'lucide-static', 'icons');
+const sprite = ICONS.map(name => {
+  // keeps the shapes only: the page sets the stroke, so every icon draws the same
+  const shapes = readFileSync(path.join(LUCIDE, `${name}.svg`), 'utf8').replace(/^[\s\S]*?<svg[^>]*>|<\/svg>\s*$/g, '');
+  return `<symbol id="${name}" viewBox="0 0 24 24">${shapes}</symbol>`;
+});
+STATIC.set('/icons.svg', { type: 'image/svg+xml', data: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><!-- Lucide icons, ISC License: https://lucide.dev/license -->${sprite.join('')}</svg>`) });
 const INDEX = readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
 
 // The manifest is per invite link so that an installed guest app reopens on the guest's own page.
 function manifest(guestToken) {
   return JSON.stringify({
-    name: 'Tableau de bord 3D',
+    name: '3D Print Dashboard',
     short_name: 'Impressions 3D',
     start_url: guestToken ? `/g/${guestToken}` : '/',
     scope: '/',
     display: 'standalone',
-    background_color: '#F3F3F6',
-    theme_color: '#F3F3F6',
+    background_color: '#F5F5F3',
+    theme_color: '#F5F5F3',
     // "maskable" icons are full-bleed: the phone cuts its own shape out of them, edge to edge.
     icons: [
       { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },

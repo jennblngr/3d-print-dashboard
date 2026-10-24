@@ -1,9 +1,11 @@
 import { t, lang } from './i18n.js';
 import { decodeTigerTag, colorFamily } from './tigertag.js';
+import { watchSelects } from './select.js';
 
 const $ = (sel, el = document) => el.querySelector(sel);
 const app = $('#app');
 const dlg = $('#dlg');
+const confirmDlg = $('#confirm');
 const toastEl = $('#toast');
 
 // A path like /g/<token> is a guest's private page; anything else is the owner's area.
@@ -39,6 +41,18 @@ let scanPreset = {}; // what the last scanned barcode prefills in a new spool
 document.documentElement.lang = lang;
 
 // ---------- plumbing ----------
+
+// The theme is a choice of this device only (see theme.js); empty follows the device setting.
+const THEME_KEYS = { '': 'themeAuto', light: 'themeLight', dark: 'themeDark' }; // i18n and icon keys
+const currentTheme = () => document.documentElement.dataset.theme || '';
+function setTheme(theme) {
+  if (theme) document.documentElement.dataset.theme = theme;
+  else delete document.documentElement.dataset.theme;
+  try {
+    if (theme) localStorage.setItem('theme', theme);
+    else localStorage.removeItem('theme');
+  } catch {}
+}
 
 async function api(method, url, body) {
   const headers = {};
@@ -81,11 +95,38 @@ function runCleanup() {
   cleanup?.();
   cleanup = null;
 }
+// Slides a window down, then closes it (see "windows" in style.css).
+function slideClose(d) {
+  if (!d.open || d.classList.contains('closing')) return;
+  d.classList.add('closing');
+  const done = () => {
+    // a window opened again in the meantime stays open
+    if (!d.classList.contains('closing')) return;
+    d.classList.remove('closing');
+    d.close();
+  };
+  d.addEventListener('animationend', e => e.target === d && !e.pseudoElement && done(), { once: true });
+  setTimeout(done, 600); // in case the animation never runs
+}
+// Closes at once, for a window replaced by another.
+function closeNow(d) {
+  d.classList.remove('closing');
+  if (d.open) d.close();
+}
 function closeDialog() {
   runCleanup();
-  if (dlg.open) dlg.close();
+  slideClose(dlg);
 }
-dlg.addEventListener('close', runCleanup); // Escape key / back gesture
+dlg.addEventListener('close', runCleanup);
+// Escape key / back gesture: slide down like the Cancel button
+dlg.addEventListener('cancel', e => {
+  e.preventDefault();
+  closeDialog();
+});
+confirmDlg.addEventListener('cancel', e => {
+  e.preventDefault();
+  slideClose(confirmDlg);
+});
 dlg.addEventListener('input', printTotal);
 // What the scale shows, spool included, gives the filament left once the empty spool is taken off.
 dlg.addEventListener('input', e => {
@@ -97,7 +138,8 @@ dlg.addEventListener('input', e => {
 
 // onSubmit may return a function to run once the dialog is closed and data reloaded.
 function openDialog(title, bodyHtml, onSubmit, { submitLabel = t('save'), subtitle = '' } = {}) {
-  closeDialog();
+  runCleanup();
+  closeNow(dlg);
   dlg.innerHTML = `<form>
     <h2>${h(title)}${subtitle ? `<small>${h(subtitle)}</small>` : ''}</h2>
     ${bodyHtml}
@@ -126,44 +168,60 @@ function openDialog(title, bodyHtml, onSubmit, { submitLabel = t('save'), subtit
   if (toastEl.classList.contains('show')) raiseToast();
 }
 
+// Asks before something that cannot be undone, in place of the browser's confirm().
+// Resolves to true only through the red button: Cancel, Escape or the back gesture say no.
+function ask(question, confirmLabel = t('delete')) {
+  confirmDlg.innerHTML = `<form>
+    <h2>${h(question)}</h2>
+    <menu>
+      <button type="button" value="">${t('cancel')}</button>
+      <button type="button" value="yes" class="danger solid">${h(confirmLabel)}</button>
+    </menu>
+  </form>`;
+  confirmDlg.onclick = e => {
+    const button = e.target.closest('button');
+    if (!button) return;
+    confirmDlg.returnValue = button.value;
+    slideClose(confirmDlg);
+  };
+  closeNow(confirmDlg);
+  confirmDlg.returnValue = '';
+  confirmDlg.showModal();
+  return new Promise(resolve => confirmDlg.addEventListener('close', () => resolve(confirmDlg.returnValue === 'yes'), { once: true }));
+}
+
 function field(name, label, value = '', attrs = '') {
   return `<label>${h(label)}<input name="${name}" value="${h(value)}" ${attrs}></label>`;
 }
 
-// ---------- icons and illustrations (inline SVG: nothing is fetched) ----------
+// ---------- icons (Lucide, from the sprite the server builds: see ICONS in server.js) ----------
 
-const icon = (shapes, size = 20, stroke = 1.8) =>
-  `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${shapes}</svg>`;
+const icon = (name, size = 16, stroke = 1.6) =>
+  `<svg width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="${stroke}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><use href="/icons.svg#${name}"/></svg>`;
+// a section's icon: in the tabs, and large in its empty state
+const SECTION_ICONS = { spools: 'disc-3', prints: 'box', people: 'users', wishes: 'heart' };
 const icons = {
-  plus: icon('<path d="M12 5v14M5 12h14"/>'),
-  scan: icon('<path d="M4 8V5a1 1 0 0 1 1-1h3M16 4h3a1 1 0 0 1 1 1v3M20 16v3a1 1 0 0 1-1 1h-3M8 20H5a1 1 0 0 1-1-1v-3"/><path d="M8 8v8M10.7 8v8M13.3 8v8M16 8v8"/>'),
-  settings: icon('<circle cx="12" cy="12" r="3"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/>', 18),
-  logout: icon('<path d="M14 4h4a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-4M10 8l-4 4 4 4M6 12h9"/>', 18),
-  trash: icon('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>', 18),
-  refresh: icon('<path d="M20 12a8 8 0 1 1-2.34-5.66M20 4v5h-5"/>', 18),
-  link: icon('<path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1"/>', 18),
-  pay: icon('<path d="M17 6.8A6.5 6.5 0 1 0 17 17.2M4.5 10h8M4.5 14h8"/>', 18),
-  close: icon('<path d="M6 6l12 12M18 6L6 18"/>', 18, 2),
-  spools: icon('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>', 22),
-  prints: icon('<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/>', 22),
-  people: icon('<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.6 3.4-5.5 6.5-5.5s5.7 1.9 6.5 5.5"/><path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c1.8.7 3 2.4 3.5 5.2"/>', 22),
-  wishes: icon('<path d="M12 20s-7.5-4.6-7.5-10A4.3 4.3 0 0 1 12 7.2 4.3 4.3 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z"/>', 22),
+  plus: icon('plus'),
+  scan: icon('scan-barcode'),
+  settings: icon('settings', 18),
+  logout: icon('log-out', 18),
+  themeLight: icon('sun', 18),
+  themeDark: icon('moon', 18),
+  themeAuto: icon('sun-moon', 18),
+  trash: icon('trash-2'),
+  refresh: icon('refresh-cw'),
+  link: icon('link'),
+  pay: icon('euro'),
+  close: icon('x', 18),
+  brokenLink: icon('unlink', 40, 1.2),
+  ...Object.fromEntries(Object.entries(SECTION_ICONS).map(([k, name]) => [k, icon(name, 20)])),
 };
+const logo = '<span class="logo" aria-hidden="true"></span>';
 
-const illustration = shapes =>
-  `<svg class="illus" viewBox="0 0 120 120" width="112" height="112" aria-hidden="true"><circle cx="60" cy="60" r="56" style="fill: var(--lav)"/>${shapes}</svg>`;
-const illustrations = {
-  spool: illustration('<circle cx="54" cy="62" r="34" style="fill: var(--p-lav)"/><circle cx="54" cy="62" r="25" fill="none" stroke="#8C91F2" stroke-width="2" stroke-dasharray="2 5"/><circle cx="54" cy="62" r="9" style="fill: var(--card)"/><path d="M86 70c10-2 14-14 8-24" fill="none" style="stroke: var(--p-rose)" stroke-width="4" stroke-linecap="round"/><circle cx="93" cy="40" r="7" style="fill: var(--p-mist)"/>'),
-  box: illustration('<path d="M60 26l32 18-32 18-32-18z" style="fill: var(--p-rose)"/><path d="M28 44l32 18v36L28 80z" style="fill: var(--p-lav)"/><path d="M92 44L60 62v36l32-18z" style="fill: var(--p-mist)"/>'),
-  heart: illustration('<path d="M60 92S30 74 30 52a15 15 0 0 1 30-5 15 15 0 0 1 30 5c0 22-30 40-30 40z" style="fill: var(--p-rose)"/><circle cx="88" cy="32" r="7" style="fill: var(--p-lav)"/>'),
-  brokenLink: illustration('<rect x="18" y="52" width="42" height="22" rx="11" fill="none" style="stroke: var(--p-lav)" stroke-width="7" transform="rotate(-35 39 63)"/><rect x="62" y="44" width="42" height="22" rx="11" fill="none" style="stroke: var(--p-rose)" stroke-width="7" transform="rotate(-35 83 55)"/><path d="M56 40l-4-9M66 42l5-8" fill="none" style="stroke: var(--p-mist)" stroke-width="4" stroke-linecap="round"/>'),
-};
-const mark = '<span class="mark" aria-hidden="true"><i></i><i></i><i></i></span>';
-const AVATAR_TINTS = ['--p-lav', '--p-rose', '--p-mist'];
+const empty = (kind, small = false) =>
+  `<div class="empty${small ? ' small' : ''}">${small ? icon(SECTION_ICONS[kind], 22, 1.4) : icon(SECTION_ICONS[kind], 36, 1.2)}<p>${t('empty')}</p></div>`;
 
-const empty = (kind, small = false) => `<div class="empty${small ? ' small' : ''}">${illustrations[kind]}<p>${t('empty')}</p></div>`;
-
-// Pages without the tab bar (sign-in, messages, a guest's page) are "bare".
+// Pages without the tabs (sign-in, messages, a guest's page) are "bare".
 function setPage(html, bare = false) {
   app.className = bare ? 'app guest' : 'app';
   app.innerHTML = html;
@@ -241,14 +299,14 @@ function wishCard(w, admin) {
 
 const paymentRow = (p, admin) => `<li>
   <span>${showDate(p.paid_at)}${p.note ? ' · ' + h(p.note) : ''}</span>
-  <span>${eur(p.amount_cents)}${admin ? ` <button class="link danger icon" data-act="delPay" data-id="${p.id}" aria-label="${t('delete')}">${icon('<path d="M6 6l12 12M18 6L6 18"/>', 16, 2)}</button>` : ''}</span>
+  <span>${eur(p.amount_cents)}${admin ? ` <button class="link danger icon" data-act="delPay" data-id="${p.id}" aria-label="${t('delete')}">${icons.close}</button>` : ''}</span>
 </li>`;
 
 // ---------- owner area ----------
 
 function renderLogin() {
   setPage(`<main class="login"><form id="login">
-    ${mark}
+    ${logo}
     <h1>${t('appName')}</h1>
     <label>${t('password')}<input name="password" type="password" autocomplete="current-password" required autofocus></label>
     <p class="err" hidden></p>
@@ -268,33 +326,39 @@ function renderLogin() {
 }
 
 function renderMessage(msg) {
-  setPage(`<main class="login"><div class="empty">${illustrations.brokenLink}<p>${h(msg)}</p></div></main>`, true);
+  setPage(`<main class="login"><div class="empty">${icons.brokenLink}<p>${h(msg)}</p></div></main>`, true);
 }
 
+const grid = cards => `<div class="grid">${cards.join('')}</div>`;
+
+// Each tab is a panel: the buttons next to its title (`head`) and its content (`body`).
 const views = {
   spools() {
-    const cards = state.spools.map(spoolCard);
-    return `<div class="bar">
-      <button class="primary" data-act="scan">${icons.scan}${t('scanBarcode')}</button>
-      <button data-act="spool">${icons.plus}${t('add')}</button>
-    </div>${cards.join('') || empty('spool')}`;
+    return {
+      head: `<button class="primary" data-act="scan">${icons.scan}${t('scanBarcode')}</button>
+        <button data-act="spool">${icons.plus}${t('add')}</button>`,
+      body: state.spools.length ? grid(state.spools.map(spoolCard)) : empty('spools'),
+    };
   },
   prints() {
     const pending = state.bambu_prints.filter(b => b.state === 'pending');
     const handled = state.bambu_prints.filter(b => b.state !== 'pending');
     const undecided = state.prints.filter(toDecide);
     const decided = state.prints.filter(p => !toDecide(p));
-    return `<div class="bar"><button class="primary" data-act="print">${icons.plus}${t('newPrint')}</button></div>
-      ${pending.length ? `<h2>${t('toAssign')}</h2>${pending.map(bambuCard).join('')}` : ''}
-      ${undecided.length ? `<h2>${t('toDecide')}</h2>${undecided.map(p => printCard(p, true)).join('')}` : ''}
-      ${pending.length || undecided.length ? `<h2>${t('prints')}</h2>` : ''}
-      ${decided.map(p => printCard(p, true)).join('') || empty('box')}
-      ${handled.length ? `<details><summary>${t('notBilled', { count: handled.length })}</summary>
-        <article class="card col"><ul class="lines">${handled.map(bambuRow).join('')}</ul></article></details>` : ''}
-      ${bambuPanel()}`;
+    return {
+      head: `<button class="primary" data-act="print">${icons.plus}${t('newPrint')}</button>`,
+      body: `<div class="cols"><div>
+        ${pending.length ? `<h3>${t('toAssign')}</h3>${grid(pending.map(bambuCard))}` : ''}
+        ${undecided.length ? `<h3>${t('toDecide')}</h3>${grid(undecided.map(p => printCard(p, true)))}` : ''}
+        ${pending.length || undecided.length ? `<h3>${t('prints')}</h3>` : ''}
+        ${decided.length ? grid(decided.map(p => printCard(p, true))) : empty('prints')}
+        ${handled.length ? `<details><summary>${t('notBilled', { count: handled.length })}</summary>
+          <article class="card col"><ul class="lines">${handled.map(bambuRow).join('')}</ul></article></details>` : ''}
+      </div><aside>${bambuPanel()}</aside></div>`,
+    };
   },
   people() {
-    const cards = state.people.map((p, i) => {
+    const cards = state.people.map(p => {
       const b = p.balance_cents;
       const label = b > 0 ? t('owes', { amount: eur(b) }) : b < 0 ? t('credit', { amount: eur(-b) }) : t('settled');
       const pays = state.payments.filter(x => x.person_id === p.id);
@@ -305,10 +369,8 @@ const views = {
         theirs.length ? t('printsTotal', { amount: eur(theirs.reduce((sum, x) => sum + x.total_cents, 0)) }) : '',
         undecided ? t('toDecideCount', { count: undecided }) : '',
       ].filter(Boolean).join(' · ');
-      const initial = (Array.from(p.name.trim())[0] || '').toUpperCase();
       return `<article class="card col person">
         <div class="row">
-          <span class="avatar" style="--a: var(${AVATAR_TINTS[i % AVATAR_TINTS.length]})" aria-hidden="true">${h(initial)}</span>
           <span class="grow"><strong>${h(p.name)}</strong>${notes ? `<small>${notes}</small>` : ''}</span><span class="chip ${b > 0 ? 'declined' : 'printed'}">${label}</span>
         </div>
         <div class="bar">
@@ -327,42 +389,74 @@ const views = {
     });
     const mine = state.prints.filter(isMine);
     const me = `<button type="button" class="card me" data-act="me">
-      <span class="avatar" style="--a: var(--p-mist)" aria-hidden="true">${h(Array.from(t('me'))[0])}</span>
       <span class="grow"><strong>${t('me')}</strong><small>${t('printCount', { count: mine.length })} · ${t('notBilledTag')}</small></span>
       <strong class="amount">${eur(mine.reduce((sum, p) => sum + p.total_cents, 0))}</strong>
     </button>`;
-    return `<div class="bar"><button class="primary" data-act="person">${icons.plus}${t('add')}</button></div>${me}${cards.join('') || empty('spool')}`;
+    return {
+      head: `<button class="primary" data-act="person">${icons.plus}${t('add')}</button>`,
+      body: me + (cards.length ? grid(cards) : empty('people')),
+    };
   },
   wishes() {
     const order = ['requested', 'accepted', 'printed', 'declined'];
     const sorted = [...state.wishes].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status));
-    return sorted.map(w => wishCard(w, true)).join('') || empty('heart');
+    return { body: sorted.length ? grid(sorted.map(w => wishCard(w, true))) : empty('wishes') };
   },
 };
 
+// All four panels are drawn: a phone shows the open one, a computer shows the others folded.
 function renderAdmin() {
   if (!views[tab]) tab = 'spools';
-  const badges = {
+  const counts = {
     prints: state.bambu_prints.filter(b => b.state === 'pending').length + state.prints.filter(toDecide).length,
     wishes: state.wishes.filter(w => w.status === 'requested').length,
   };
-  setPage(`<header>
-      <div class="top">
-        <p class="appname">${mark}${t('appName')}</p>
-        <span>
-          <button class="link icon" data-act="settings" aria-label="${t('settings')}" title="${t('settings')}">${icons.settings}</button>
-          <button class="link" data-act="logout">${icons.logout}${t('logout')}</button>
-        </span>
-      </div>
-      <h1>${t(tab)}</h1>
-    </header>
-    <main>${views[tab]()}</main>
-    <footer>${state.last_backup ? t('lastBackup', { date: new Date(state.last_backup).toLocaleString(lang) }) : t('noBackup')}</footer>
-    <nav aria-label="${t('sections')}">${Object.keys(views).map(k =>
+  const badge = k => (counts[k] ? `<b class="badge">${counts[k]}</b>` : '');
+  const themeLabel = t('themeNow', { name: t(THEME_KEYS[currentTheme()]) });
+  const backup = state.last_backup ? t('lastBackup', { date: new Date(state.last_backup).toLocaleString(lang) }) : t('noBackup');
+  const panel = k => {
+    const { head = '', body } = views[k]();
+    return `<section class="panel ${k === tab ? 'open' : 'closed'}" data-id="${k}" aria-label="${t(k)}">
+      <button type="button" class="strip" data-act="tab" data-id="${k}" aria-expanded="false">${icons[k]}${badge(k)}<span class="vlabel">${t(k)}</span></button>
+      <div class="panel-head"><h2>${t(k)}</h2>${badge(k)}${head}</div>
+      <div class="panel-body">${body}</div>
+    </section>`;
+  };
+  setPage(`<div class="shell">
+    <nav class="slide" style="--i: ${Object.keys(views).indexOf(tab)}" aria-label="${t('sections')}">${Object.keys(views).map(k =>
       `<button data-act="tab" data-id="${k}" ${k === tab ? 'class="on" aria-current="page"' : ''}>
-        <span class="ico">${icons[k]}${badges[k] ? `<b class="badge">${badges[k]}</b>` : ''}</span><span>${t(k)}</span>
+        <span class="ico">${icons[k]}${badge(k)}</span><span>${t(k)}</span>
       </button>`
-    ).join('')}</nav>`);
+    ).join('')}</nav>
+    <div class="page">
+      <div class="topbar">
+        <p class="appname">${logo}${t('appName')}</p>
+        <p class="sync">${backup}</p>
+        <button class="link icon" data-act="theme" aria-label="${themeLabel}">${icons[THEME_KEYS[currentTheme()]]}</button>
+        <button class="link icon" data-act="settings" aria-label="${t('settings')}" title="${t('settings')}">${icons.settings}</button>
+        <button class="link icon" data-act="logout" aria-label="${t('logout')}" title="${t('logout')}">${icons.logout}</button>
+      </div>
+      <main class="dash">${Object.keys(views).map(panel).join('')}</main>
+      <footer>${backup}</footer>
+    </div>
+  </div>`);
+}
+
+// Opens a tab's panel in place rather than redrawing the page, so the switch can animate
+// (see "animations" in style.css).
+function showTab() {
+  $('nav', app).style.setProperty('--i', Object.keys(views).indexOf(tab));
+  for (const button of app.querySelectorAll('nav button')) {
+    const on = button.dataset.id === tab;
+    button.classList.toggle('on', on);
+    if (on) button.setAttribute('aria-current', 'page');
+    else button.removeAttribute('aria-current');
+  }
+  for (const panel of app.querySelectorAll('.panel')) {
+    panel.classList.toggle('open', panel.dataset.id === tab);
+    panel.classList.toggle('closed', panel.dataset.id !== tab);
+  }
+  $('.dash', app).classList.add('switching');
 }
 
 // A print read from the Bambu Lab account, waiting for the owner to say what it was for.
@@ -398,7 +492,7 @@ function bambuPanel() {
     : b.error ? t('bambuUnreachable')
     : b.last_sync ? t('bambuOn', { date: new Date(b.last_sync).toLocaleString(lang) })
     : t('bambuNever');
-  return `<h2>${t('bambuTitle')}</h2>
+  return `<h3>${t('bambuTitle')}</h3>
     <article class="card col bambu">
       <p class="note"><span class="status ${b.connected && !b.error ? '' : 'off'}" aria-hidden="true"></span><span>${status}</span></p>
       <div class="bar">
@@ -411,7 +505,8 @@ function bambuPanel() {
 function spoolCard(s) {
   const pct = Math.max(0, Math.min(100, (s.remaining_g / s.weight_g) * 100));
   const name = [s.material, s.variant, s.color_name].filter(Boolean).join(' ');
-  return `<button type="button" class="card spool ${s.archived ? 'faded' : ''}" style="--c:${h(s.color_hex)}" data-act="spool" data-id="${s.id}">
+  const low = !s.archived && pct < 25;
+  return `<button type="button" class="card spool ${s.archived ? 'faded' : low ? 'low' : ''}" style="--c:${h(s.color_hex)}" data-act="spool" data-id="${s.id}">
     <span class="swatch" aria-hidden="true"></span>
     <span class="grow">
       <small class="maker">${h(s.brand)}</small>
@@ -730,26 +825,33 @@ function nextSpool(spool) {
 
 function renderGuest() {
   const b = state.balance_cents;
-  setPage(`<header><h1>${t('hello', { name: h(state.person.name) })}</h1></header>
+  setPage(`<div class="shell"><div class="page">
+    <header><h1>${t('hello', { name: h(state.person.name) })}</h1></header>
     <main>
       <section class="balance ${b > 0 ? 'due' : ''}">
-        <span class="deco" aria-hidden="true"><i></i><i></i><i></i></span>
         <small>${b > 0 ? t('youOwe') : b < 0 ? t('yourCredit') : t('allSettled')}</small>
         <strong>${eur(Math.abs(b))}</strong>
       </section>
-      <h2>${t('wishes')}</h2>
-      <div class="bar"><button class="primary" data-act="wish">${icons.plus}${t('newWish')}</button></div>
-      ${state.wishes.map(w => wishCard(w, false)).join('') || empty('heart', true)}
-      <h2>${t('prints')}</h2>
-      ${state.prints.map(p => printCard(p, false)).join('') || empty('box', true)}
-      ${state.payments.length ? `<h2>${t('payments')}</h2><article class="card col"><ul class="lines">${state.payments.map(p => paymentRow(p, false)).join('')}</ul></article>` : ''}
-    </main>`, true);
+      <div class="cols">
+        <div>
+          <h2>${t('wishes')}</h2>
+          <div class="bar"><button class="primary" data-act="wish">${icons.plus}${t('newWish')}</button></div>
+          ${state.wishes.map(w => wishCard(w, false)).join('') || empty('wishes', true)}
+        </div>
+        <div>
+          <h2>${t('prints')}</h2>
+          ${state.prints.map(p => printCard(p, false)).join('') || empty('prints', true)}
+          ${state.payments.length ? `<h2>${t('payments')}</h2><article class="card col"><ul class="lines">${state.payments.map(p => paymentRow(p, false)).join('')}</ul></article>` : ''}
+        </div>
+      </div>
+    </main>
+  </div></div>`, true);
 }
 
 // ---------- actions ----------
 
 const remove = async (url, question = 'confirmDelete') => {
-  if (!confirm(t(question))) return;
+  if (!(await ask(t(question)))) return;
   await api('DELETE', url);
   closeDialog();
   await refresh();
@@ -760,12 +862,18 @@ const actions = {
   tab(id) {
     tab = id;
     sessionStorage.setItem('tab', id);
-    renderAdmin();
+    showTab();
     scrollTo(0, 0);
   },
   settings() {
     openDialog(t('settings'), `${field('empty_spool_g', t('emptySpool'), state.empty_spool_g || '', 'type="number" inputmode="decimal" min="0" max="5000" step="any"')}
       <p class="hint">${t('emptySpoolHint')}</p>`, fd => api('PUT', '/api/settings', { empty_spool_g: fd.get('empty_spool_g') || 0 }).then(() => null));
+  },
+  // auto, then light, then dark, then back to auto
+  theme() {
+    const next = { '': 'light', light: 'dark', dark: '' }[currentTheme()];
+    setTheme(next);
+    renderAdmin();
   },
   async logout() {
     await api('POST', '/api/logout');
@@ -806,7 +914,7 @@ const actions = {
     toast(t('bambuChecked'));
   },
   async bambuDisconnect() {
-    if (!confirm(t('confirmBambuDisconnect'))) return;
+    if (!(await ask(t('confirmBambuDisconnect'), t('bambuDisconnect')))) return;
     await api('DELETE', '/api/bambu');
     await refresh();
   },
@@ -857,7 +965,7 @@ const actions = {
   },
   delPay: id => remove(`/api/payments/${id}`),
   async newToken(id) {
-    if (!confirm(t('confirmNewLink'))) return;
+    if (!(await ask(t('confirmNewLink'), t('newLink')))) return;
     await api('POST', `/api/people/${id}/token`);
     await refresh();
   },
@@ -868,7 +976,7 @@ const actions = {
       ${mine.map(p => printCard(p, true)).join('') || `<p class="hint">${t('empty')}</p>`}`, null, { subtitle: t('myPrints') });
   },
   async delPerson(id) {
-    if (!confirm(t('confirmDeletePerson'))) return;
+    if (!(await ask(t('confirmDeletePerson')))) return;
     await api('DELETE', `/api/people/${id}`);
     await refresh();
   },
@@ -900,6 +1008,9 @@ document.addEventListener('click', async e => {
     toast(err.message);
   }
 });
+
+watchSelects(dlg);
+watchSelects(app);
 
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 refresh();

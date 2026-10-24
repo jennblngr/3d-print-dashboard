@@ -3,10 +3,15 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=24" },
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "start": "node server.js",
     "set-password": "node scripts/set-password.js",
     "restore": "node scripts/restore-backup.js"
+  },
+  "dependencies": {
+    "lucide-static": "1.61.0"
   }
 }

@@ -97,8 +97,9 @@ d'elles est violée, préviens-moi immédiatement.
   perdu, les sauvegardes le sont aussi).
 
 ## Conventions et décisions prises
-- Aucune dépendance et aucune étape de build : Node 24 et sa base SQLite
-  intégrée, interface en JavaScript simple.
+- Pas d'étape de build : Node 24 et sa base SQLite intégrée, interface en
+  JavaScript simple. Les paquets npm sont acceptés (depuis le 25/10/2026),
+  avec mon accord pour chacun ; installés dans l'image Docker par `npm ci`.
 - Hébergement sur mon VPS, dans `/var/www/3d-print-dashboard`, avec Docker.
   Le serveur héberge d'autres projets : l'application n'écoute que sur le
   serveur lui-même (port 3020) et c'est le Nginx déjà en place, avec certbot,
@@ -198,13 +199,32 @@ d'elles est violée, préviens-moi immédiatement.
 - Demande-moi de tenir cette liste à jour.
 
 ## Design
-- Style « Coton » (doux, aéré, pastel), issu de Claude Design et appliqué le
-  13/10/2026 : barre d'onglets en bas, fenêtres qui montent du bas de l'écran,
-  cartes de bobine teintées à la couleur du filament, message bref en haut.
+- Style « Terminal » (minimaliste, libellés en police à chasse fixe, une seule
+  couleur d'accent orange), issu de Claude Design et appliqué le 25/10/2026 ;
+  il remplace le style « Coton » du 13/10/2026. Les 4 onglets sont 4 panneaux :
+  sur téléphone, un seul affiché et onglets en bas ; sur tablette (dès 880 px),
+  onglets dans une barre latérale ; sur ordinateur (dès 1100 px), panneaux côte
+  à côte, les fermés réduits à une bande avec leur nom à la verticale.
+  Fenêtres qui montent du bas de l'écran (centrées sur grand écran) et
+  redescendent à la fermeture ; message bref en haut. Les confirmations
+  (supprimer, remplacer un lien...) passent par une fenêtre de l'app, jamais
+  par celle du navigateur.
+- Listes déroulantes dessinées par l'app (`public/select.js`), identiques dans
+  tous les navigateurs ; la vraie liste du navigateur reste cachée et c'est elle
+  qui garde la valeur enregistrée.
+- Animations courtes au changement d'onglet uniquement (pas quand la page se
+  redessine après un enregistrement) : repère qui glisse sous l'onglet et
+  contenu en fondu sur téléphone et tablette, panneau qui s'élargit sur
+  ordinateur. Aucune animation si l'appareil demande moins de mouvements.
 - Toute l'apparence passe par `public/style.css` et ses variables (couleurs,
-  arrondis, police) : un nouvel écran réutilise les classes existantes, sans
-  style écrit à part. Thèmes clair et sombre selon le réglage du téléphone.
-- Police Urbanist et icônes livrées avec l'application : rien n'est chargé
+  arrondis, polices) : un nouvel écran réutilise les classes existantes, sans
+  style écrit à part. Espacements sur une seule échelle : 4, 8, 12, 16, 24
+  et 32 px. Thèmes clair et sombre : selon le réglage de l'appareil
+  par défaut, ou forcés d'un clic sur l'icône en haut (soleil et lune =
+  automatique, soleil = clair, lune = sombre) ; choix propre à chaque
+  appareil.
+- Polices Geist et Geist Mono livrées avec l'application ; icônes Lucide (paquet
+  npm `lucide-static`), servies par l'application elle-même : rien n'est chargé
   depuis un autre site.
 - Le dossier `design/` (planche des écrans, brief) reste sur mon Mac et n'est
   pas dans le dépôt.
