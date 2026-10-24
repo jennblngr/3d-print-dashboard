@@ -1,5 +1,5 @@
 // Keeps the app shell available offline. API calls always go to the network.
-const CACHE = 'shell-v5';
+const CACHE = 'shell-v6';
 const SHELL = ['/', '/style.css', '/app.js', '/i18n.js', '/tigertag.js', '/tigertag-db.js', '/fonts/urbanist.woff2', '/icon-192.png'];
 
 self.addEventListener('install', e => {

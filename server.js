@@ -501,6 +501,8 @@ function printSnapshot(id) {
       printed_at: prints[0].printed_at,
       adjust_cents: billedPart ? billedPart.adjust_cents * prints.length : 0,
       adjust_note: billedPart?.adjust_note || '',
+      // a failed print read from the Bambu account stays the owner's own: nobody is billed for it
+      failed: prints.some(p => db.prepare('SELECT 1 FROM bambu_prints WHERE print_id = ? AND failed = 1').get(p.id)),
       lines: [...lines.values()].map(l => ({ spool_id: l.spool_id, label: l.label, grams: Math.round(l.grams * 100) / 100, cost_cents: l.cost_cents })),
     },
   };
@@ -526,6 +528,7 @@ function removePrint(snapshot) {
 // whether each person's part is billed. A person added to it waits for the owner's decision.
 function editPrint(id, body) {
   const before = printSnapshot(id);
+  if (before.form.failed) ownerOnly(body);
   const bambuIds = removePrint(before);
   const { id: newId } = createPrint({ ...body, wish_id: null }, before.lines);
   const created = db.prepare('SELECT id, person_id FROM prints WHERE id = ? OR group_id = ?').all(newId, newId);
@@ -664,6 +667,11 @@ function bambuHttpError(e) {
   if (!(e instanceof BambuError)) return e;
   return new HttpError(502, e.reason === 'unreachable' ? 'Bambu Lab est injoignable, réessayez plus tard' : 'Bambu Lab a refusé : vérifiez l’adresse e-mail et le code');
 }
+// A failed print is never billed: it can only be the owner's own.
+function ownerOnly(body) {
+  if (!Array.isArray(body.person_ids) || body.person_ids.some(v => v !== null)) throw bad('Une impression ratée n’est facturée à personne');
+}
+
 function pendingBambuPrint(id) {
   const row = mustExist('bambu_prints', id);
   if (row.state !== 'pending') throw new HttpError(409, 'Cette impression a déjà été traitée');
@@ -812,23 +820,10 @@ route('POST', '/api/bambu/sync', 'admin', async () => {
 });
 route('POST', '/api/bambu/prints/:id/bill', 'admin', ({ params, body }) =>
   tx(() => {
-    if (pendingBambuPrint(params.id).failed) throw bad('Une impression ratée ne peut pas être attribuée');
+    if (pendingBambuPrint(params.id).failed) ownerOnly(body);
     const { id } = createPrint(body);
     db.prepare("UPDATE bambu_prints SET state = 'billed', print_id = ? WHERE id = ?").run(id, params.id);
     return { id };
-  })
-);
-// Filament used for nobody's bill (a failed print, or one for the owner): only the stock moves.
-route('POST', '/api/bambu/prints/:id/stock', 'admin', ({ params, body }) =>
-  tx(() => {
-    pendingBambuPrint(params.id);
-    const spool = mustExist('spools', int(body.spool_id, 1, Number.MAX_SAFE_INTEGER, 'Bobine'));
-    const grams = num(body.grams, 0.01, 100000, 'Grammes');
-    // as for any print, the spool may go below 0: undoing gives back exactly these grams
-    db.prepare('UPDATE spools SET remaining_g = remaining_g - ?, sealed = 0 WHERE id = ?').run(grams, spool.id);
-    db.prepare("UPDATE bambu_prints SET state = 'stock', spool_id = ?, grams = ? WHERE id = ?").run(spool.id, grams, params.id);
-    setSetting('last_spool_id', spool.id);
-    return { ok: true };
   })
 );
 route('POST', '/api/bambu/prints/:id/ignore', 'admin', ({ params }) => {
@@ -836,7 +831,8 @@ route('POST', '/api/bambu/prints/:id/ignore', 'admin', ({ params }) => {
   db.prepare("UPDATE bambu_prints SET state = 'ignored' WHERE id = ?").run(params.id);
   return { ok: true };
 });
-// Undo "stock" or "ignore": the filament goes back to its spool and the print waits again.
+// Undo "ignore", or "stock" (an option since removed, which only took filament from a spool):
+// the filament goes back to its spool and the print waits again.
 route('POST', '/api/bambu/prints/:id/reset', 'admin', ({ params }) =>
   tx(() => {
     const row = mustExist('bambu_prints', params.id);
