@@ -173,6 +173,11 @@ d'elles est violée, préviens-moi immédiatement.
 - Trois issues pour une impression relevée : associée à une personne (même
   calcul que la saisie manuelle), « stock seulement » (pour moi : le stock
   baisse, personne n'est facturé), ou ignorée. Tout est annulable.
+- Une impression qui termine une bobine et en entame une autre : le formulaire le
+  signale et propose de mettre le reste sur une autre bobine (même produit d'abord).
+  L'application ne refuse jamais une impression qui a eu lieu : si le reste n'est
+  pas réparti, la bobine descend sous 0 et affiche « Poids à vérifier ». Supprimer
+  ou modifier l'impression rend exactement les grammes retirés.
 - Une impression ratée n'est jamais facturée : elle diminue seulement le
   stock, d'un poids estimé au prorata de la durée écoulée, que je peux
   corriger.
@@ -218,4 +223,8 @@ d'elles est violée, préviens-moi immédiatement.
   2. suite du test en conditions réelles : scan du code-barres à la caméra,
      lien d'invitation ouvert par un proche, restauration d'une sauvegarde
      sur le VPS ;
-  3. copie des sauvegardes hors du VPS (choix à faire).
+  3. copie des sauvegardes hors du VPS (choix à faire) ;
+  4. plus tard : retirer « Stock seulement » des impressions relevées. Raison :
+     doublon avec une impression associée à « Moi » (stock qui baisse, personne
+     facturé), qui gère déjà plusieurs bobines. À prévoir avant : par où passe une
+     impression ratée, qui aujourd'hui ne peut aller qu'en « Stock seulement ».
