@@ -374,8 +374,7 @@ function bambuCard(b) {
       ${b.failed ? `<span class="chip declined">${t('failedPrint')}</span>` : ''}
     </div>
     <div class="bar choices">
-      ${b.failed ? '' : `<button class="primary" data-act="bambuBill" data-id="${b.id}">${t('bill')}</button>`}
-      <button class="${b.failed ? 'primary' : ''}" data-act="bambuStock" data-id="${b.id}">${t('stockOnly')}</button>
+      <button class="primary" data-act="bambuBill" data-id="${b.id}">${t('bill')}</button>
       <button class="ghost" data-act="bambuIgnore" data-id="${b.id}">${t('ignore')}</button>
     </div>
   </article>`;
@@ -556,6 +555,9 @@ const keptValue = label => `l:${label}`;
 function printDialog(pre = {}, edit = null, copy = null) {
   if (copy) edit = { ...state.prints.find(p => p.id === copy).edit, id: null, printed_at: today() };
   if (copy) edit.lines = edit.lines.filter(l => l.spool_id != null);
+  // a failed print stays the owner's own; a new print started from it is a real one
+  if (copy) edit.failed = false;
+  const failed = edit ? edit.failed : pre.failed;
   // starting from a past print is only offered for a print entered by hand
   const sources = edit?.id || pre.bambu_id || pre.wish_id ? [] : copySources();
   const used = new Set(edit?.lines.map(l => l.spool_id));
@@ -574,21 +576,24 @@ function printDialog(pre = {}, edit = null, copy = null) {
     : spools.length ? lineRow() : '';
   const checked = id => (edit ? edit.person_ids.includes(id) : id === pre.person_id);
   if (edit) pre = { title: edit.title, printed_at: edit.printed_at };
+  const people = failed ? [] : state.people;
   const body = `
     ${sources.length ? `<label>${t('copyFrom')}<select id="copyFrom">
       <option value="">${t('copyNone')}</option>
       ${sources.map(p => `<option value="${p.id}" ${p.id === copy ? 'selected' : ''}>${h(p.title)} · ${showDate(p.printed_at)} · ${h(p.who)}</option>`).join('')}
     </select></label>` : ''}
     <fieldset><legend>${t('forWhom')}</legend>
-      ${state.people.map(p =>
+      ${people.map(p =>
         `<label class="check"><input type="checkbox" name="person" value="${p.id}" ${checked(p.id) ? 'checked' : ''}>${h(p.name)}</label>`).join('')}
-      <label class="check"><input type="checkbox" name="person" value="" ${checked(null) ? 'checked' : ''}>${t('me')}</label>
+      <label class="check"><input type="checkbox" name="person" value="" ${checked(null) || failed ? 'checked' : ''}>${t('me')}</label>
+      ${failed ? `<p class="hint">${t('failedOwnerOnly')}</p>` : ''}
     </fieldset>
     ${field('title', t('title'), pre.title || '', 'required maxlength="120"')}
     ${field('printed_at', t('date'), pre.printed_at || today(), 'type="date" required')}
     <fieldset><legend>${t('filament')}</legend>
       <div id="lines">${rows}</div>
       ${spools.length ? `<button type="button" class="ghost" data-act="addLine">${t('addFilament')}</button>` : ''}
+      ${pre.failed ? `<p class="hint">${t('failedHint')}</p>` : ''}
     </fieldset>
     <div id="billing">
       ${field('adjust', t('adjust'), edit?.adjust_cents ? (edit.adjust_cents / 100).toFixed(2) : '', 'inputmode="decimal"')}
@@ -637,19 +642,6 @@ function copySources() {
     printed_at: p.printed_at,
     who: p.edit.person_ids.map(id => (id === null ? t('me') : state.people.find(x => x.id === id)?.name)).join(', '),
   })).sort((a, b) => b.printed_at.localeCompare(a.printed_at) || b.id - a.id);
-}
-
-// Filament that goes on nobody's bill: a failed print, or one the owner made for themselves.
-function stockDialog(b) {
-  const spools = activeSpools();
-  if (!spools.length) return toast(t('needSpool'));
-  const body = `
-    <label>${t('spool')}<select name="spool_id">${spoolOptions(spools, state.last_spool_id)}</select></label>
-    ${field('grams', t('gramsUsed'), b.suggested_g || '', 'type="number" inputmode="decimal" min="0.01" step="0.01" required')}
-    ${b.failed ? `<p class="hint">${t('failedHint')}</p>` : ''}`;
-  openDialog(t('stockOnlyTitle'), body, async fd => {
-    await api('POST', `/api/bambu/prints/${b.id}/stock`, { spool_id: +fd.get('spool_id'), grams: parseFloat(fd.get('grams')) });
-  }, { subtitle: b.title });
 }
 
 // Two steps: Bambu Lab emails a one-time code, which is then typed here. No Bambu password involved.
@@ -794,9 +786,10 @@ const actions = {
   delPrint: id => remove(`/api/prints/${id}`, state.prints.find(p => p.id === id)?.share_count > 1 ? 'confirmDeleteShared' : 'confirmDelete'),
   bambuBill(id) {
     const b = state.bambu_prints.find(x => x.id === id);
-    printDialog({ title: b.title, grams: b.suggested_g, printed_at: localDay(b.ended_at), spool_id: state.last_spool_id, bambu_id: b.id });
+    // a failed print is billed to nobody: it can only be the owner's own
+    const failed = !!b.failed;
+    printDialog({ title: b.title, grams: b.suggested_g, printed_at: localDay(b.ended_at), spool_id: state.last_spool_id, bambu_id: b.id, failed, person_id: failed ? null : undefined });
   },
-  bambuStock: id => stockDialog(state.bambu_prints.find(x => x.id === id)),
   async bambuIgnore(id) {
     await api('POST', `/api/bambu/prints/${id}/ignore`);
     await refresh();

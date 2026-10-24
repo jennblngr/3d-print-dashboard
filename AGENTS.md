@@ -170,17 +170,20 @@ d'elles est violée, préviens-moi immédiatement.
   serveur lit l'historique de mon compte Bambu toutes les 5 minutes et range
   chaque impression terminée dans « À attribuer ». Rien n'est compté, ni
   montant ni stock, tant que je ne l'ai pas attribuée moi-même.
-- Trois issues pour une impression relevée : associée à une personne (même
-  calcul que la saisie manuelle), « stock seulement » (pour moi : le stock
-  baisse, personne n'est facturé), ou ignorée. Tout est annulable.
+- Deux issues pour une impression relevée : attribuée (même formulaire que la
+  saisie manuelle, « Moi » compris quand c'est pour moi : le stock baisse, personne
+  n'est facturé), ou ignorée. Tout est annulable. L'ancien choix « Stock seulement »
+  a été retiré le 24/10/2026 ; les impressions déjà rangées ainsi restent
+  annulables (bouton « Remettre »).
 - Une impression qui termine une bobine et en entame une autre : le formulaire le
   signale et propose de mettre le reste sur une autre bobine (même produit d'abord).
   L'application ne refuse jamais une impression qui a eu lieu : si le reste n'est
   pas réparti, la bobine descend sous 0 et affiche « Poids à vérifier ». Supprimer
   ou modifier l'impression rend exactement les grammes retirés.
-- Une impression ratée n'est jamais facturée : elle diminue seulement le
-  stock, d'un poids estimé au prorata de la durée écoulée, que je peux
-  corriger.
+- Une impression ratée n'est jamais facturée : elle s'attribue uniquement à
+  « Moi » (le serveur refuse toute autre personne, même en la modifiant
+  ensuite) et diminue seulement le stock, d'un poids estimé au prorata de la
+  durée écoulée, que je peux corriger.
 - L'historique Bambu antérieur à la connexion du compte n'est pas repris : je
   le saisis à la main. Idem pour une impression lancée par carte SD.
 - La connexion à Bambu se fait par un code reçu par e-mail ; mon mot de passe
@@ -224,7 +227,3 @@ d'elles est violée, préviens-moi immédiatement.
      lien d'invitation ouvert par un proche, restauration d'une sauvegarde
      sur le VPS ;
   3. copie des sauvegardes hors du VPS (choix à faire) ;
-  4. plus tard : retirer « Stock seulement » des impressions relevées. Raison :
-     doublon avec une impression associée à « Moi » (stock qui baisse, personne
-     facturé), qui gère déjà plusieurs bobines. À prévoir avant : par où passe une
-     impression ratée, qui aujourd'hui ne peut aller qu'en « Stock seulement ».
