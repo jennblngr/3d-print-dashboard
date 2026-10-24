@@ -413,7 +413,7 @@ function spoolInput(b) {
     /^#[0-9a-f]{6}$/i.test(b.color_hex) ? b.color_hex : '#888888',
     int(b.price_cents, 0, 10000000, 'Price'),
     weight,
-    b.remaining_g == null || b.remaining_g === '' ? weight : num(b.remaining_g, 0, 100000, 'Remaining weight'),
+    b.remaining_g == null || b.remaining_g === '' ? weight : num(b.remaining_g, -100000, 100000, 'Remaining weight'),
     str(b.code, 500) || null,
     str(b.notes, 1000),
     b.archived ? 1 : 0,
@@ -596,7 +596,9 @@ function createPrint(body, previous = null) {
     for (const { spool, label, grams, cost } of lines) {
       db.prepare('INSERT INTO print_lines (print_id, spool_id, label, grams, cost_cents) VALUES (?, ?, ?, ?, ?)').run(id, spool?.id ?? null, label, grams, cost);
       if (!spool) continue;
-      db.prepare('UPDATE spools SET remaining_g = MAX(0, remaining_g - ?), sealed = 0 WHERE id = ?').run(grams, spool.id);
+      // no floor at 0: what is taken here is exactly what is given back if the print is
+      // deleted or edited, and a spool below 0 shows that its weight needs checking
+      db.prepare('UPDATE spools SET remaining_g = remaining_g - ?, sealed = 0 WHERE id = ?').run(grams, spool.id);
       setSetting('last_spool_id', spool.id);
     }
     firstId ??= id;
@@ -822,10 +824,9 @@ route('POST', '/api/bambu/prints/:id/stock', 'admin', ({ params, body }) =>
     pendingBambuPrint(params.id);
     const spool = mustExist('spools', int(body.spool_id, 1, Number.MAX_SAFE_INTEGER, 'Spool'));
     const grams = num(body.grams, 0.01, 100000, 'Grams');
-    // what is recorded is what really left the spool, so that undoing gives back exactly that
-    const taken = Math.min(grams, spool.remaining_g);
-    db.prepare('UPDATE spools SET remaining_g = remaining_g - ?, sealed = 0 WHERE id = ?').run(taken, spool.id);
-    db.prepare("UPDATE bambu_prints SET state = 'stock', spool_id = ?, grams = ? WHERE id = ?").run(spool.id, taken, params.id);
+    // as for any print, the spool may go below 0: undoing gives back exactly these grams
+    db.prepare('UPDATE spools SET remaining_g = remaining_g - ?, sealed = 0 WHERE id = ?').run(grams, spool.id);
+    db.prepare("UPDATE bambu_prints SET state = 'stock', spool_id = ?, grams = ? WHERE id = ?").run(spool.id, grams, params.id);
     setSetting('last_spool_id', spool.id);
     return { ok: true };
   })

@@ -419,7 +419,7 @@ function spoolCard(s) {
       <span class="meter"><i style="width:${pct}%"></i></span>
       <small><b class="qty">${Math.round(s.remaining_g)}</b> / ${Math.round(s.weight_g)} g · ${eur((s.price_cents / s.weight_g) * 1000)}/kg</small>
     </span>
-    ${s.archived ? `<span class="chip">${t('finished')}</span>` : s.sealed ? `<span class="chip">${t('sealedChip')}</span>` : ''}
+    ${s.archived ? `<span class="chip">${t('finished')}</span>` : s.remaining_g < 0 ? `<span class="chip declined">${t('checkWeight')}</span>` : s.sealed ? `<span class="chip">${t('sealedChip')}</span>` : ''}
   </button>`;
 }
 
@@ -444,7 +444,7 @@ function spoolDialog(spool, preset = {}) {
     ${field('empty_g', t('emptySpool'), s.empty_g ?? (state.empty_spool_g || ''), 'type="number" inputmode="decimal" min="0" max="5000" step="any"')}
     ${field('scale_g', t('scaleWeight'), '', 'type="number" inputmode="decimal" min="0" step="any"')}
     <p class="hint">${t('scaleHint')}</p>
-    ${field('remaining_g', t('remaining'), s.remaining_g ?? '', 'type="number" min="0" step="any"')}
+    ${field('remaining_g', t('remaining'), s.remaining_g ?? '', `type="number" min="${Math.min(0, s.remaining_g ?? 0)}" step="any"`)}
     ${field('barcode', t('barcode'), s.barcode ?? '', 'maxlength="500"')}
     ${field('code', t('code'), s.code ?? '', 'maxlength="500"')}
     <label>${t('notes')}<textarea name="notes" maxlength="1000" rows="2">${h(s.notes)}</textarea></label>
@@ -666,6 +666,44 @@ function printTotal() {
   const split = $('#split', dlg);
   split.hidden = parts < 2;
   split.textContent = t('splitHint', { count: parts, amount: eur(part) });
+  lineHints();
+}
+
+// Warns under a line that takes more than its spool has left: the print finished that spool
+// and went on with another one, so the rest can be moved to a second line.
+function lineHints() {
+  const lines = $('#lines', dlg);
+  lines.querySelectorAll('[data-runs-out]').forEach(el => el.remove());
+  const used = new Map(); // grams the lines above already took from each spool
+  for (const row of lines.querySelectorAll('.line')) {
+    const spool = state.spools.find(s => s.id === +$('select', row).value);
+    const grams = parseFloat($('input', row).value) || 0;
+    if (!spool || !grams) continue;
+    // the print being edited gives its filament back before taking it again
+    const before = editedLines.find(l => l.spool_id === spool.id)?.grams || 0;
+    const left = Math.max(0, +(spool.remaining_g + before - (used.get(spool.id) || 0)).toFixed(2));
+    used.set(spool.id, (used.get(spool.id) || 0) + grams);
+    const extra = +(grams - left).toFixed(2);
+    if (extra <= 0) continue;
+    row.insertAdjacentHTML('afterend', `<p class="hint" data-runs-out>${t('spoolRunsOut', { left, extra })}
+      <button type="button" class="ghost" data-act="splitLine" data-left="${left}" data-extra="${extra}">${t('putRestElsewhere')}</button></p>`);
+  }
+}
+
+// The spool most likely to take over from one that ran out: the same product, then the same
+// filament; one already opened before a sealed one.
+function nextSpool(spool) {
+  const others = activeSpools().filter(s => s.id !== spool.id);
+  const tests = [
+    s => spool.barcode && s.barcode === spool.barcode,
+    s => ['brand', 'material', 'variant', 'color_name'].every(k => s[k] === spool[k]),
+    s => s.material === spool.material && s.color_name === spool.color_name,
+  ];
+  for (const test of tests) {
+    const hits = others.filter(test);
+    if (hits.length) return hits.find(s => !s.sealed && s.remaining_g > 0) || hits.find(s => s.sealed) || hits[0];
+  }
+  return others[0] || null;
 }
 
 // ---------- guest area ----------
@@ -753,6 +791,20 @@ const actions = {
   },
   addLine() {
     $('#lines', dlg).insertAdjacentHTML('beforeend', lineRow());
+  },
+  // the line keeps what its spool had left, a new line on the next spool takes the rest
+  splitLine(_, el) {
+    const row = el.parentElement.previousElementSibling;
+    const next = nextSpool(state.spools.find(s => s.id === +$('select', row).value));
+    if (!next) return toast(t('needSpool'));
+    const left = +el.dataset.left;
+    if (left > 0) {
+      $('input', row).value = left;
+      row.insertAdjacentHTML('afterend', lineRow(next.id, +el.dataset.extra));
+    } else {
+      $('select', row).value = next.id;
+    }
+    printTotal();
   },
   rmLine(_, el) {
     el.closest('.line').remove();
