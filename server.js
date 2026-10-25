@@ -895,9 +895,9 @@ route('DELETE', '/api/my/wishes/:id', 'guest', ({ person, params }) => {
 
 // ---------- static files ----------
 
-const TYPES = { '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.woff2': 'font/woff2' };
+const TYPES = { '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 const STATIC = new Map(
-  ['style.css', 'theme.js', 'app.js', 'select.js', 'i18n.js', 'tigertag.js', 'tigertag-db.js', 'sw.js', 'icon-192.png', 'icon-512.png', 'icon-maskable-192.png', 'icon-maskable-512.png', 'fonts/geist-latin.woff2', 'fonts/geist-latin-ext.woff2', 'fonts/geist-mono-latin.woff2', 'fonts/geist-mono-latin-ext.woff2'].map(name => [
+  ['style.css', 'theme.js', 'app.js', 'select.js', 'i18n.js', 'tigertag.js', 'tigertag-db.js', 'sw.js', 'icon-192.png', 'icon-512.png', 'icon-maskable-192.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'favicon.svg', 'favicon-32.png', 'favicon.ico', 'fonts/geist-latin.woff2', 'fonts/geist-latin-ext.woff2', 'fonts/geist-mono-latin.woff2', 'fonts/geist-mono-latin-ext.woff2'].map(name => [
     '/' + name,
     { type: TYPES[path.extname(name)], data: readFileSync(path.join(__dirname, 'public', name)) },
   ])
@@ -918,11 +918,11 @@ const INDEX = readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8')
 function manifest(guestToken) {
   return JSON.stringify({
     name: '3D Print Dashboard',
-    short_name: 'Impressions 3D',
+    short_name: '3D Print Dashboard',
     start_url: guestToken ? `/g/${guestToken}` : '/',
     scope: '/',
     display: 'standalone',
-    background_color: '#F5F5F3',
+    background_color: '#0A0A0B',
     theme_color: '#F5F5F3',
     // "maskable" icons are full-bleed: the phone cuts its own shape out of them, edge to edge.
     icons: [
