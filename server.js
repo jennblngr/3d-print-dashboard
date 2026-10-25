@@ -395,11 +395,13 @@ function loginFailed(key) {
 // `guestId` limits the list to one person's prints and leaves out who else shares them:
 // a guest learns that a print is shared, never with whom. A print the owner has not yet
 // decided to bill or gift stays out of the guest's sight.
+// An edited print is recorded again under a new id but keeps its created_at, so it stays
+// where it was in the list.
 function listPrints(guestId) {
   const prints = db.prepare(
     `SELECT p.id, p.person_id, pe.name AS person_name, p.title, p.printed_at, p.adjust_cents, p.adjust_note, p.group_id, p.billing
      FROM prints p LEFT JOIN people pe ON pe.id = p.person_id ${guestId ? "WHERE p.person_id = ? AND p.billing != 'pending'" : ''}
-     ORDER BY p.printed_at DESC, p.id DESC`
+     ORDER BY p.printed_at DESC, p.created_at DESC, p.id DESC`
   ).all(...(guestId ? [guestId] : []));
   const others = db.prepare(
     'SELECT pe.name FROM prints g LEFT JOIN people pe ON pe.id = g.person_id WHERE g.group_id = ? AND g.id != ? ORDER BY g.id'

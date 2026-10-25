@@ -95,7 +95,8 @@ export function nextSpool(state, spool) {
   return others[0] || null;
 }
 
-// The past prints a new one can start from, newest first, a shared print listed once.
+// The past prints a new one can start from, in the server's order (newest first), a shared
+// print listed once.
 export function copySources(state) {
   const seen = new Set();
   return state.prints.filter(p => {
@@ -106,5 +107,5 @@ export function copySources(state) {
     title: p.title,
     printed_at: p.printed_at,
     who: p.edit.person_ids.map(id => (id === null ? t('me') : state.people.find(x => x.id === id)?.name)).join(', '),
-  })).sort((a, b) => b.printed_at.localeCompare(a.printed_at) || b.id - a.id);
+  }));
 }
