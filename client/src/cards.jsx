@@ -10,7 +10,7 @@ const Dot = ({ hex }) => (hex ? <i className="dot" style={{ '--c': hex }} /> : n
 // ---------- prints ----------
 
 // The colour of the filament a print line used, when it is known: sent with the line, or
-// found on a spool still in stock that carries the same name.
+// found on a spool still listed that carries the same name.
 const lineColor = (state, l) => l.color_hex || state.spools?.find(s => spoolName(s) === l.label)?.color_hex;
 
 const printOwner = p => (isMine(p) ? `${t('me')} · ${t('notBilledTag')}` : p.person_name);
@@ -163,23 +163,16 @@ export const PaymentRow = ({ p, admin }) => (
 // ---------- spools ----------
 
 export function SpoolCard({ s }) {
-  const pct = Math.max(0, Math.min(100, (s.remaining_g / s.weight_g) * 100));
   const name = [s.material, s.variant, s.color_name].filter(Boolean).join(' ');
-  const low = !s.archived && pct < 25;
-  const chip = s.archived ? <span className="chip">{t('finished')}</span>
-    : s.remaining_g < 0 ? <span className="chip declined">{t('checkWeight')}</span>
-    : s.sealed ? <span className="chip">{t('sealedChip')}</span>
-    : null;
   return (
-    <button type="button" className={`card spool ${s.archived ? 'faded' : low ? 'low' : ''}`} style={{ '--c': s.color_hex }} onClick={() => spoolDialog(s)}>
+    <button type="button" className={`card spool ${s.archived ? 'faded' : ''}`} style={{ '--c': s.color_hex }} onClick={() => spoolDialog(s)}>
       <span className="swatch" aria-hidden="true" />
       <span className="grow">
         <small className="maker">{s.brand}</small>
         <strong>{name}</strong>
-        <span className="meter"><i style={{ width: `${pct}%` }} /></span>
-        <small><b className="qty">{Math.round(s.remaining_g)}</b> / {Math.round(s.weight_g)} g · {eur((s.price_cents / s.weight_g) * 1000)}/kg</small>
+        <small>{eur(s.price_cents)} · {fmtGrams(s.weight_g)} g · {eur((s.price_cents / s.weight_g) * 1000)}/kg</small>
       </span>
-      {chip}
+      {s.archived ? <span className="chip">{t('finished')}</span> : null}
     </button>
   );
 }

@@ -64,35 +64,17 @@ function colorDistance(a, b) {
   const r = (r1 + r2) / 2;
   return Math.sqrt((2 + r / 256) * (r1 - r2) ** 2 + 4 * (g1 - g2) ** 2 + (2 + (255 - r) / 256) * (b1 - b2) ** 2);
 }
-// The spool a Bambu print most likely used: the same material and the closest colour, an
-// opened spool with filament left before a sealed or empty one. Without a close enough colour,
-// the spool used last. `matched` says whether the choice comes from what Bambu reported.
+// The spool a Bambu print most likely used: the same material and the closest colour.
+// Without a close enough colour, the spool used last. `matched` says whether the choice comes from what Bambu reported.
 export function suggestSpool(state, b) {
   const norm = v => (v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
   const pool = activeSpools(state).filter(s => !b.material || norm(s.material) === norm(b.material));
   if (b.color_hex && pool.length) {
-    const score = s => colorDistance(s.color_hex, b.color_hex) + (s.sealed ? 30 : 0) + (s.remaining_g <= 0 ? 200 : 0);
-    const best = pool.reduce((x, y) => (score(y) < score(x) ? y : x));
+    const best = pool.reduce((x, y) => (colorDistance(y.color_hex, b.color_hex) < colorDistance(x.color_hex, b.color_hex) ? y : x));
     if (colorDistance(best.color_hex, b.color_hex) <= 120) return { id: best.id, matched: true };
   }
   if (!b.color_hex && pool.length === 1) return { id: pool[0].id, matched: true };
   return { id: state.last_spool_id, matched: false };
-}
-
-// The spool most likely to take over from one that ran out: the same product, then the same
-// filament; one already opened before a sealed one.
-export function nextSpool(state, spool) {
-  const others = activeSpools(state).filter(s => s.id !== spool.id);
-  const tests = [
-    s => spool.barcode && s.barcode === spool.barcode,
-    s => ['brand', 'material', 'variant', 'color_name'].every(k => s[k] === spool[k]),
-    s => s.material === spool.material && s.color_name === spool.color_name,
-  ];
-  for (const test of tests) {
-    const hits = others.filter(test);
-    if (hits.length) return hits.find(s => !s.sealed && s.remaining_g > 0) || hits.find(s => s.sealed) || hits[0];
-  }
-  return others[0] || null;
 }
 
 // The past prints a new one can start from, in the server's order (newest first), a shared

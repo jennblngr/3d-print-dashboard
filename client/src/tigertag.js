@@ -35,7 +35,6 @@ export function decodeTigerTag(hex) {
   const uid = [b[0], b[1], b[2], b[4], b[5], b[6], b[7]];
   const aspects = [u8(10), u8(11)].map(id => ASPECTS[id]).filter(label => label && !PLAIN_ASPECTS.has(label));
   const weight = u24(20) * (GRAMS_PER_UNIT[u8(23)] ?? 0);
-  const left = u24(76) * (GRAMS_PER_UNIT[u8(23)] ?? 0);
 
   const spool = {
     // same shape as the serial number a browser reports for NFC tags it can read
@@ -46,8 +45,6 @@ export function decodeTigerTag(hex) {
     color_hex: '#' + [u8(16), u8(17), u8(18)].map(x => x.toString(16).padStart(2, '0')).join(''),
   };
   if (weight > 0) spool.weight_g = weight;
-  // 0 means "never weighed" on a chip that was not updated by a scale, so only trust a real value.
-  if (left > 0 && left <= weight) spool.remaining_g = left;
   return spool;
 }
 

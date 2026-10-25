@@ -11,7 +11,7 @@
 - Ce que je ne veux jamais casser :
   1. les montants dus par chaque personne ;
   2. le cloisonnement : chaque personne ne voit que ses propres données ;
-  3. le stock de bobines et les poids restants.
+  3. les bobines enregistrées et leurs prix.
 
 ## Langue
 - On se parle en français. Mais le CODE — noms de variables, de fichiers,
@@ -138,18 +138,18 @@ d'elles est violée, préviens-moi immédiatement.
 - Coût = grammes × prix de la bobine ÷ poids de la bobine, plus un ajustement
   manuel. Ni électricité ni usure machine.
 - Une impression se modifie (tout : personnes, partage, date, filaments,
-  grammes, ajustement) ; le stock et les montants dus sont recalculés. Le
+  grammes, ajustement) ; les montants dus sont recalculés. Le
   filament déjà utilisé garde le prix auquel il avait été facturé, même si la
   bobine a changé de prix ou a été supprimée depuis ; un filament ajouté prend
   le prix actuel de sa bobine. Le lien avec l'impression Bambu et le souhait
   est conservé.
 - Une impression peut être « pour moi » (choix « Moi » dans la liste des
-  personnes) : le stock baisse, personne n'est facturé, et son coût en filament
+  personnes) : personne n'est facturé, et son coût en filament
   s'additionne dans la ligne « Moi » de l'onglet Personnes. « Moi » n'est pas
   une personne : ni lien d'invitation, ni solde, ni paiement.
 - Une impression peut être partagée entre plusieurs personnes (cases à cocher,
   « Moi » compris), toujours à parts égales : chacun reçoit sa part du filament
-  et du coût, le stock baisse une seule fois du total. La supprimer la supprime
+  et du coût. La supprimer la supprime
   pour tout le monde. Un proche voit que c'est partagé, jamais avec qui.
 - Une impression est d'abord associée à une ou plusieurs personnes, « à
   décider » ; je choisis ensuite, part par part, de la facturer ou de
@@ -158,8 +158,14 @@ d'elles est violée, préviens-moi immédiatement.
   offertes, jamais celles encore à décider. L'onglet Personnes affiche le
   coût total des impressions de chacun, quel que soit leur état. Les
   impressions enregistrées avant cette règle sont toutes facturées.
-- Le code-barres désigne un produit (partagé par plusieurs bobines) ; le tag
-  RFID désigne une seule bobine.
+- Pas de gestion de stock (décidé le 25/10/2026) : une bobine n'est qu'une
+  référence de prix et de poids pour calculer le coût des impressions. Rien
+  ne baisse quand on imprime ; plus de restant, de pesée, ni de bobine
+  « sous vide ». « Terminée » sert seulement à la retirer des choix. Les
+  anciens chiffres de stock restent dans la base, inutilisés.
+- Une fiche par produit : scanner un code-barres déjà connu ouvre sa fiche ;
+  un tag RFID ouvre la fiche qui le porte, sinon celle du même produit
+  (marque, matière, type, couleur), sinon une nouvelle.
 - Tags TigerTag : un navigateur ne peut pas les lire (format brut, pas NDEF).
   L'application sait décoder leur contenu, avec les tables publiques TigerTag
   embarquées (aucun service en ligne appelé). La lecture de la puce passera
@@ -172,22 +178,17 @@ d'elles est violée, préviens-moi immédiatement.
 - Type de filament (silk, matte...) : champ libre, vide = normal.
 - Relevé automatique des impressions Bambu Lab (imprimante A1, sans AMS) : le
   serveur lit l'historique de mon compte Bambu toutes les 5 minutes et range
-  chaque impression terminée dans « À attribuer ». Rien n'est compté, ni
-  montant ni stock, tant que je ne l'ai pas attribuée moi-même.
+  chaque impression terminée dans « À attribuer ». Aucun montant n'est compté
+  tant que je ne l'ai pas attribuée moi-même.
 - Deux issues pour une impression relevée : attribuée (même formulaire que la
-  saisie manuelle, « Moi » compris quand c'est pour moi : le stock baisse, personne
+  saisie manuelle, « Moi » compris quand c'est pour moi : personne
   n'est facturé), ou ignorée. Tout est annulable. L'ancien choix « Stock seulement »
   a été retiré le 24/10/2026 ; les impressions déjà rangées ainsi restent
   annulables (bouton « Remettre »).
-- Une impression qui termine une bobine et en entame une autre : le formulaire le
-  signale et propose de mettre le reste sur une autre bobine (même produit d'abord).
-  L'application ne refuse jamais une impression qui a eu lieu : si le reste n'est
-  pas réparti, la bobine descend sous 0 et affiche « Poids à vérifier ». Supprimer
-  ou modifier l'impression rend exactement les grammes retirés.
 - Une impression ratée n'est jamais facturée : elle s'attribue uniquement à
   « Moi » (le serveur refuse toute autre personne, même en la modifiant
-  ensuite) et diminue seulement le stock, d'un poids estimé au prorata de la
-  durée écoulée, que je peux corriger.
+  ensuite), avec un poids estimé au prorata de la durée écoulée, que je peux
+  corriger.
 - L'historique Bambu antérieur à la connexion du compte n'est pas repris : je
   le saisis à la main. Idem pour une impression lancée par carte SD.
 - La connexion à Bambu se fait par un code reçu par e-mail ; mon mot de passe
@@ -212,8 +213,8 @@ d'elles est violée, préviens-moi immédiatement.
   manquantes sont récupérées pour les 50 dernières impressions que Bambu liste
   encore (y compris celles relevées avant l'ajout des images).
 - Le formulaire d'attribution présélectionne la bobine de même matière et de
-  couleur la plus proche (bobine ouverte d'abord) : simple proposition, rien
-  n'est compté avant validation.
+  couleur la plus proche : simple proposition, rien n'est compté avant
+  validation.
 - Toute évolution de la base doit convertir les données existantes au
   démarrage, sans rien perdre.
 - Demande-moi de tenir cette liste à jour.

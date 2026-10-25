@@ -2,7 +2,7 @@
 
 A small installable web app (PWA) for one maker and their private circle.
 
-- **Owner (password):** filament spool inventory with barcode / RFID scanning, prints billed per gram of filament, payments, and the wishlist of everyone.
+- **Owner (password):** filament spools (price and weight, added by barcode / RFID scanning; no stock tracking), prints billed per gram of filament, payments, and the wishlist of everyone.
 - **Guests (private invite link, no account):** what they owe and why, their payment history, and a wishlist to ask for prints.
 
 Node 24+ and its built-in SQLite on the server; the interface is written in React (`client/`) and built with Vite into
@@ -80,8 +80,8 @@ sudo docker compose start app
 
 Once the owner connects their Bambu Lab account (Prints tab), the server reads the account's print history every
 5 minutes and lists each print that ended since then under "To assign", with its filament weight. Nothing is billed
-or taken from the stock until the owner assigns it: billed to a person, taken from the stock only (always the case for
-a failed print, whose weight is estimated from how long it ran), or ignored.
+until the owner assigns it: to people, to the owner alone (always the case for a failed print, whose weight is
+estimated from how long it ran), or ignored.
 
 While the account is connected, the server also listens to the printers' live reports on Bambu's cloud message
 broker (MQTT, subscribe only: nothing is ever sent to a printer). The Prints tab then shows the print in progress, and

@@ -8,7 +8,7 @@ import { push, pushOff, pushOn, pushTest, pushUnsubscribe } from './push.js';
 import { BambuCard, BambuRow, Grid, LiveBlock, PaymentRow, PrintGroupCard, SpoolCard, WishCard } from './cards.jsx';
 import {
   adminWishDialog, assignBambu, bambuConnectDialog, handleTag, myPrintsDialog, newPrint, paymentDialog, personDialog,
-  scanDialog, settingsDialog, spoolDialog,
+  scanDialog, spoolDialog,
 } from './dialogs.jsx';
 
 const TABS = ['spools', 'prints', 'people', 'wishes'];
@@ -101,7 +101,6 @@ export function Admin({ state }) {
           <p className="appname"><Logo />{t('appName')}</p>
           <p className="sync">{backup}</p>
           <button className="link icon" onClick={nextTheme} aria-label={t('themeNow', { name: t(THEME_KEYS[theme]) })}>{icons[THEME_KEYS[theme]]}</button>
-          <button className="link icon" onClick={settingsDialog} aria-label={t('settings')} title={t('settings')}>{icons.settings}</button>
           <button className="link icon" onClick={logout} aria-label={t('logout')} title={t('logout')}>{icons.logout}</button>
         </div>
         <main className={`dash${switching ? ' switching' : ''}`}>

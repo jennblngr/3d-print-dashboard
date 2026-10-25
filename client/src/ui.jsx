@@ -16,7 +16,6 @@ export const SECTION_ICONS = { spools: 'disc-3', prints: 'box', people: 'users',
 export const icons = {
   plus: <Icon name="plus" />,
   scan: <Icon name="scan-barcode" />,
-  settings: <Icon name="settings" size={18} />,
   logout: <Icon name="log-out" size={18} />,
   themeLight: <Icon name="sun" size={18} />,
   themeDark: <Icon name="moon" size={18} />,

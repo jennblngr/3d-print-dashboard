@@ -112,7 +112,7 @@ db.exec(`
     status TEXT NOT NULL DEFAULT 'requested',
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
-  -- person_id is NULL for a print the owner made for themselves: stock moves, nobody is billed.
+  -- person_id is NULL for a print the owner made for themselves: nobody is billed.
   -- A print shared between several people is stored as one print per person, each holding
   -- that person's part of the filament; group_id (the id of the first one) ties them together.
   -- billing says whether a person's part counts in what they owe: 'pending' until the owner
@@ -433,23 +433,21 @@ function listPrints(guestId) {
   return prints;
 }
 
+// A spool only gives the price per gram of a print: the stock is no longer tracked, and the
+// columns it used (remaining_g, sealed, empty_g) keep their last values untouched.
 function spoolInput(b) {
-  const weight = num(b.weight_g, 1, 100000, 'Poids');
   return [
     str(b.brand, 80, 'Marque'),
     str(b.material, 40),
     str(b.color_name, 60),
     /^#[0-9a-f]{6}$/i.test(b.color_hex) ? b.color_hex : '#888888',
     int(b.price_cents, 0, 10000000, 'Prix'),
-    weight,
-    b.remaining_g == null || b.remaining_g === '' ? weight : num(b.remaining_g, -100000, 100000, 'Restant'),
+    num(b.weight_g, 1, 100000, 'Poids'),
     str(b.code, 500) || null,
     str(b.notes, 1000),
     b.archived ? 1 : 0,
     str(b.barcode, 500) || null,
     str(b.variant, 40),
-    b.sealed ? 1 : 0,
-    b.empty_g == null || b.empty_g === '' ? null : num(b.empty_g, 0, 5000, 'Poids de la bobine vide'),
   ];
 }
 function saveSpool(values, fn) {
@@ -461,7 +459,7 @@ function saveSpool(values, fn) {
     throw e;
   }
   const [brand, material, colorName, colorHex, price, weight] = values;
-  const [barcode, variant] = values.slice(10, 12);
+  const [barcode, variant] = values.slice(9, 11);
   if (barcode) {
     db.prepare(
       'INSERT OR REPLACE INTO products (barcode, brand, material, color_name, color_hex, price_cents, weight_g, variant) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -537,15 +535,11 @@ function printSnapshot(id) {
   };
 }
 
-// Must run inside tx(): deletes a print with every part of it, giving its filament back.
+// Must run inside tx(): deletes a print with every part of it.
 // Returns the ids of the Bambu Lab prints it was billed from.
 function removePrint(snapshot) {
   const bambuIds = [];
   for (const p of snapshot.prints) {
-    // give the filament back to the spools that still exist
-    for (const l of db.prepare('SELECT spool_id, grams FROM print_lines WHERE print_id = ? AND spool_id IS NOT NULL').all(p.id)) {
-      db.prepare('UPDATE spools SET remaining_g = remaining_g + ? WHERE id = ?').run(l.grams, l.spool_id);
-    }
     bambuIds.push(...db.prepare('SELECT id FROM bambu_prints WHERE print_id = ?').all(p.id).map(r => r.id));
     db.prepare('DELETE FROM prints WHERE id = ?').run(p.id);
   }
@@ -594,7 +588,7 @@ function createPrint(body, previous = null) {
   const note = str(body.adjust_note, 200);
   const lines = (Array.isArray(body.lines) ? body.lines.slice(0, 32) : []).map(line => {
     const grams = num(line?.grams, 0.01, 100000, 'Grammes') / parts;
-    // a line kept from the print being edited whose spool was deleted since: no stock to move
+    // a line kept from the print being edited whose spool was deleted since
     if (line.spool_id == null && previous) {
       const kept = previous.get(lineKey(null, line.label));
       if (!kept) throw bad('Choisissez une bobine');
@@ -627,11 +621,7 @@ function createPrint(body, previous = null) {
     }
     for (const { spool, label, grams, cost } of lines) {
       db.prepare('INSERT INTO print_lines (print_id, spool_id, label, grams, cost_cents) VALUES (?, ?, ?, ?, ?)').run(id, spool?.id ?? null, label, grams, cost);
-      if (!spool) continue;
-      // no floor at 0: what is taken here is exactly what is given back if the print is
-      // deleted or edited, and a spool below 0 shows that its weight needs checking
-      db.prepare('UPDATE spools SET remaining_g = remaining_g - ?, sealed = 0 WHERE id = ?').run(grams, spool.id);
-      setSetting('last_spool_id', spool.id);
+      if (spool) setSetting('last_spool_id', spool.id);
     }
     firstId ??= id;
   }
@@ -889,8 +879,7 @@ route('GET', '/api/state', 'admin', () => ({
   ).all(),
   bambu_live: livePrinters(),
   last_spool_id: getSetting('last_spool_id'),
-  empty_spool_g: getSetting('empty_spool_g') ?? 0,
-  spools: db.prepare('SELECT * FROM spools ORDER BY archived, sealed, brand COLLATE NOCASE, material, variant, color_name').all(),
+  spools: db.prepare('SELECT * FROM spools ORDER BY archived, brand COLLATE NOCASE, material, variant, color_name').all(),
   products: db.prepare('SELECT * FROM products').all(),
   people: db.prepare(
     `SELECT pe.id, pe.name, pe.token, ${BALANCE_SQL} AS balance_cents FROM people pe ORDER BY pe.name COLLATE NOCASE`
@@ -906,9 +895,9 @@ route('POST', '/api/spools', 'admin', ({ body }) => {
   const values = spoolInput(body);
   return saveSpool(values, () => ({
     id: db.prepare(
-      `INSERT INTO spools (brand, material, color_name, color_hex, price_cents, weight_g, remaining_g, code, notes, archived, barcode, variant, sealed, empty_g)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(...values).lastInsertRowid,
+      `INSERT INTO spools (brand, material, color_name, color_hex, price_cents, weight_g, code, notes, archived, barcode, variant, remaining_g)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(...values, values[5]).lastInsertRowid,
   }));
 });
 route('PUT', '/api/spools/:id', 'admin', ({ params, body }) => {
@@ -917,19 +906,13 @@ route('PUT', '/api/spools/:id', 'admin', ({ params, body }) => {
   saveSpool(values, () =>
     db.prepare(
       `UPDATE spools SET brand = ?, material = ?, color_name = ?, color_hex = ?, price_cents = ?, weight_g = ?,
-       remaining_g = ?, code = ?, notes = ?, archived = ?, barcode = ?, variant = ?, sealed = ?, empty_g = ? WHERE id = ?`
+       code = ?, notes = ?, archived = ?, barcode = ?, variant = ? WHERE id = ?`
     ).run(...values, params.id)
   );
   return { ok: true };
 });
 route('DELETE', '/api/spools/:id', 'admin', ({ params }) => {
   db.prepare('DELETE FROM spools WHERE id = ?').run(params.id);
-  return { ok: true };
-});
-
-// The weight of an empty spool offered by default to a new spool, which can keep its own.
-route('PUT', '/api/settings', 'admin', ({ body }) => {
-  setSetting('empty_spool_g', Math.round(num(body.empty_spool_g, 0, 5000, 'Poids de la bobine vide') * 100) / 100);
   return { ok: true };
 });
 
@@ -1041,14 +1024,11 @@ route('POST', '/api/bambu/prints/:id/ignore', 'admin', ({ params }) => {
   return { ok: true };
 });
 // Undo "ignore", or "stock" (an option since removed, which only took filament from a spool):
-// the filament goes back to its spool and the print waits again.
+// the print waits again.
 route('POST', '/api/bambu/prints/:id/reset', 'admin', ({ params }) =>
   tx(() => {
     const row = mustExist('bambu_prints', params.id);
     if (row.state !== 'stock' && row.state !== 'ignored') throw new HttpError(409, 'Cette impression ne peut pas être remise à attribuer');
-    if (row.state === 'stock' && row.spool_id) {
-      db.prepare('UPDATE spools SET remaining_g = remaining_g + ? WHERE id = ?').run(row.grams, row.spool_id);
-    }
     db.prepare("UPDATE bambu_prints SET state = 'pending', spool_id = NULL, grams = NULL WHERE id = ?").run(params.id);
     return { ok: true };
   })
@@ -1127,8 +1107,8 @@ const STATIC = new Map(
     })
 );
 // The Lucide icons the interface uses (see `icons` in client/src/ui.jsx), gathered at startup from the
-// lucide-static package into one small sprite: the browser loads 18 icons, not the whole set.
-const ICONS = ['plus', 'scan-barcode', 'settings', 'log-out', 'sun', 'moon', 'sun-moon', 'trash-2', 'refresh-cw', 'link', 'euro', 'x', 'unlink', 'disc-3', 'box', 'users', 'heart', 'bell', 'chevron-left', 'chevron-right'];
+// lucide-static package into one small sprite: the browser loads 19 icons, not the whole set.
+const ICONS = ['plus', 'scan-barcode', 'log-out', 'sun', 'moon', 'sun-moon', 'trash-2', 'refresh-cw', 'link', 'euro', 'x', 'unlink', 'disc-3', 'box', 'users', 'heart', 'bell', 'chevron-left', 'chevron-right'];
 const LUCIDE = path.join(__dirname, 'node_modules', 'lucide-static', 'icons');
 const sprite = ICONS.map(name => {
   // keeps the shapes only: the page sets the stroke, so every icon draws the same
