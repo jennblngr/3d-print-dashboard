@@ -354,7 +354,6 @@ dialog .delete-zone { padding-top: 16px; border-top: 1px dashed var(--line-stron
   .app .panel.closed .strip { display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 12px; width: 100%; height: 100%; min-height: 0; padding: 16px 0; border: 0; border-radius: 0; background: none; color: var(--muted); }
   .app .panel.closed .strip:hover { background: var(--panel-2); color: var(--text); }
   .app .strip .vlabel { writing-mode: vertical-rl; font: 500 12px/1 var(--mono); letter-spacing: 0.16em; text-transform: uppercase; white-space: nowrap; }
-  .app .strip .vlabel::before { content: ""; display: block; width: 3px; height: 14px; margin: 0 auto 12px; background: var(--accent); }
   .app .panel-head { flex-wrap: nowrap; min-height: 52px; margin: 0; padding: 0 16px; border-bottom: 1px solid var(--line); }
   .app .panel-head h2 { display: flex; flex: 1; margin: 0; font: 500 12px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text); }
   .app .panel-head h2::before { display: block; }
@@ -408,9 +407,6 @@ dialog .delete-zone { padding-top: 16px; border-top: 1px dashed var(--line-stron
   .app .dash.switching .panel.open .panel-body { animation-delay: calc(var(--motion) * 210ms); }
   .app .dash.switching .panel.open .grid > * { animation-delay: calc(var(--motion) * (260ms + var(--n, 0) * 35ms)); }
   .app .dash.switching .panel.closed .strip { animation: tdb-fade calc(var(--motion) * 300ms) ease both; animation-delay: calc(var(--motion) * 120ms); }
-  .app .strip svg, .app .strip .vlabel { transition: transform calc(var(--motion) * 200ms) var(--ease-out); }
-  .app .panel.closed .strip:hover svg { transform: scale(1.08); }
-  .app .panel.closed .strip:hover .vlabel { transform: translateY(3px); }
 }
 
 /* ---------- 13. native controls: finishing touches ----------
