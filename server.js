@@ -409,6 +409,11 @@ function listPrints(guestId) {
     `SELECT l.label, l.grams, l.cost_cents, s.color_hex
      FROM print_lines l LEFT JOIN spools s ON s.id = l.spool_id WHERE l.print_id = ? ORDER BY l.id`
   );
+  // the model picture of the Bambu print it came from; a shared print is linked through one of its parts
+  const cover = db.prepare(
+    `SELECT b.id FROM bambu_prints b JOIN bambu_covers c ON c.id = b.id
+     WHERE b.print_id IN (SELECT id FROM prints WHERE id = ? OR group_id = ?) LIMIT 1`
+  );
   for (const p of prints) {
     p.lines = lines.all(p.id);
     p.total_cents = p.lines.reduce((sum, l) => sum + l.cost_cents, 0) + p.adjust_cents;
@@ -418,6 +423,7 @@ function listPrints(guestId) {
     if (!guestId) {
       p.shared_with = shared.map(o => o.name);
       p.edit = printSnapshot(p.id).form;
+      p.cover_id = cover.get(p.id, p.group_id)?.id ?? null;
     }
     delete p.group_id;
   }

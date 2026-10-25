@@ -258,11 +258,14 @@ function billingButtons(p) {
   return p.billing === 'billed' ? set('gifted', 'giftIt') : set('billed', 'billIt');
 }
 
+const cover = (id, cls = 'thumb') => `<img class="${cls}" src="/api/bambu/prints/${id}/cover" alt="" loading="lazy">`;
+
 function printCard(p, admin) {
   const lines = p.lines.map(l => `<li><span>${lineDot(l)}${h(l.label)} · ${fmtGrams(l.grams)} g</span><span>${eur(l.cost_cents)}</span></li>`);
   if (p.adjust_cents) lines.push(`<li class="adj"><span>${h(p.adjust_note || t('adjustment'))}</span><span>${eur(p.adjust_cents)}</span></li>`);
   return `<article class="card col print">
     <div class="row">
+      ${admin && p.cover_id ? cover(p.cover_id) : ''}
       <div class="grow"><strong>${h(p.title)}</strong><small>${showDate(p.printed_at)}${admin ? ' · ' + printOwner(p) : ''}${printSharing(p)}</small></div>
       <strong class="amount">${eur(p.total_cents)}</strong>
     </div>
@@ -473,7 +476,7 @@ function bambuCard(b) {
   const dot = b.color_hex ? `<i class="dot" style="--c:${h(b.color_hex)}"></i>` : '';
   return `<article class="card col todo ${b.failed ? 'failed' : ''}">
     <div class="row">
-      ${b.has_cover ? `<img class="thumb" src="/api/bambu/prints/${b.id}/cover" alt="" loading="lazy">` : ''}
+      ${b.has_cover ? cover(b.id) : ''}
       <div class="grow"><strong>${h(b.title)}</strong>
         <small>${showDate(localDay(b.ended_at))}${b.material ? ` · ${dot}${h(b.material)}` : ''} · ${fmtGrams(b.suggested_g, 1)} g${planned}</small></div>
       ${b.failed ? `<span class="chip declined">${t('failedPrint')}</span>` : ''}
@@ -489,7 +492,7 @@ function bambuRow(b) {
   const spool = state.spools.find(s => s.id === b.spool_id);
   const what = b.state === 'ignored' ? t('ignored') : `${fmtGrams(b.grams)} g${spool ? ' · ' + h(spoolName(spool)) : ''}`;
   return `<li>
-    <span>${showDate(localDay(b.ended_at))} · ${h(b.title)} · ${what}</span>
+    <span>${b.has_cover ? cover(b.id, 'thumb sm') : ''}${showDate(localDay(b.ended_at))} · ${h(b.title)} · ${what}</span>
     <span><button class="link" data-act="bambuReset" data-id="${b.id}">${t('putBack')}</button></span>
   </li>`;
 }
