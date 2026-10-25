@@ -2,7 +2,7 @@ FROM node:24-alpine
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
-COPY server.js auth.js backup.js bambu.js ./
+COPY server.js auth.js backup.js bambu.js bambu-live.js push.js ./
 COPY public ./public
 COPY scripts ./scripts
 RUN mkdir /data && chown node:node /data

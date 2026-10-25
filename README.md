@@ -78,6 +78,19 @@ Once the owner connects their Bambu Lab account (Prints tab), the server reads t
 or taken from the stock until the owner assigns it: billed to a person, taken from the stock only (always the case for
 a failed print, whose weight is estimated from how long it ran), or ignored.
 
+While the account is connected, the server also listens to the printers' live reports on Bambu's cloud message
+broker (MQTT, subscribe only: nothing is ever sent to a printer). The Prints tab then shows the print in progress, and
+a print that ends is picked up within seconds instead of at the next 5-minute reading. If Bambu refuses that
+connection, everything else keeps working. Each print to assign shows the picture of its model, downloaded once from
+Bambu and served by the app, and the assign form preselects the spool of the same material and closest colour.
+
+## Notifications
+
+From the Prints tab, the owner can turn on notifications on each of their devices: one when a print ends or fails
+(tapping it opens the assign form), one when the printer pauses on a problem. They are standard Web Push messages,
+encrypted for the device and signed with a key the server makes on first use (kept in the database): the browser's
+push service (Google's for Chrome) carries them without being able to read them. Guests never get any.
+
 - Signing in uses a one-time code that Bambu Lab emails; the Bambu password is never asked for or stored.
 - The resulting access key is kept in the database (so it is also in the backups) and is never sent to a browser.
 - This is the interface Bambu's own apps use, not a documented one: it may stop working. Prints can always be entered by hand.

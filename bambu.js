@@ -58,6 +58,51 @@ export async function login(email, code) {
   return { token: data.accessToken, expiresAt: Date.now() + lifetime * 1000 };
 }
 
+// The account's number, which names it on Bambu's live connection (see bambu-live.js).
+export async function accountUid(token) {
+  const data = await call('GET', '/v1/design-user-service/my/preference', { token });
+  const uid = String(data.uid ?? '');
+  if (!/^\d{1,20}$/.test(uid)) throw new BambuError('unreachable');
+  return uid;
+}
+
+// The printers bound to the account.
+export async function printers(token) {
+  const data = await call('GET', '/v1/iot-service/api/user/bind', { token });
+  if (!Array.isArray(data.devices)) throw new BambuError('unreachable');
+  return data.devices
+    .filter(d => typeof d?.dev_id === 'string' && /^[\w-]{1,64}$/.test(d.dev_id))
+    .map(d => ({ id: d.dev_id, name: (typeof d.name === 'string' && d.name.trim().slice(0, 60)) || d.dev_id }));
+}
+
+// The picture of a print's model, as Bambu stores it. Only images from Bambu's own storage are
+// fetched, and kept small: null when there is none or it does not look right.
+const COVER_HOSTS = /(^|\.)(amazonaws\.com|aliyuncs\.com|bblmw\.com|bambulab\.com|bambulab\.cn)$/;
+const MAX_COVER = 1_000_000;
+export async function fetchCover(address) {
+  let url;
+  try {
+    url = new URL(address);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || !COVER_HOSTS.test(url.hostname)) return null;
+  try {
+    const res = await fetch(url, { redirect: 'error', signal: AbortSignal.timeout(15_000) });
+    if (!res.ok || +res.headers.get('content-length') > MAX_COVER) return null;
+    const data = Buffer.from(await res.arrayBuffer());
+    if (data.length > MAX_COVER) return null;
+    // the type comes from the file itself, never from what the other side says it is
+    const type = data.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) ? 'image/png'
+      : data[0] === 0xff && data[1] === 0xd8 && data[2] === 0xff ? 'image/jpeg'
+      : data.subarray(0, 4).toString() === 'RIFF' && data.subarray(8, 12).toString() === 'WEBP' ? 'image/webp'
+      : null;
+    return type && { type, data };
+  } catch {
+    return null;
+  }
+}
+
 // The latest prints that are over (finished, failed or cancelled), newest first.
 export async function recentPrints(token) {
   const data = await call('GET', '/v1/user-service/my/tasks?limit=50', { token });
@@ -79,13 +124,18 @@ export async function recentPrints(token) {
       share = Number.isFinite(started) && planned > 0 ? Math.min(1, Math.max(0, (ended - started) / 1000 / planned)) : 0;
     }
     const title = [hit.designTitle, hit.title].find(s => typeof s === 'string' && s.trim()) || 'Bambu print';
-    const material = hit.amsDetailMapping?.[0]?.filamentType;
+    const filament = hit.amsDetailMapping?.[0];
+    const material = filament?.filamentType;
+    // colours come as RRGGBBAA
+    const color = [filament?.targetColor, filament?.sourceColor].find(c => typeof c === 'string' && /^[0-9a-f]{6}([0-9a-f]{2})?$/i.test(c));
     prints.push({
       id: hit.id,
       title: title.trim().slice(0, 120),
       failed,
       endedAt: new Date(ended).toISOString(),
       material: typeof material === 'string' ? material.slice(0, 40) : '',
+      color: color ? '#' + color.slice(0, 6).toLowerCase() : '',
+      cover: typeof hit.cover === 'string' ? hit.cover : '',
       plannedGrams: grams,
       suggestedGrams: Math.round(grams * share * 10) / 10,
     });
