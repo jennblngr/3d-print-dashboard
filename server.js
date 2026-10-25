@@ -1052,6 +1052,19 @@ route('DELETE', '/api/payments/:id', 'admin', ({ params }) => {
   return { ok: true };
 });
 
+function addWish(personId, body, status) {
+  const url = str(body.url, 500);
+  if (url && !/^https?:\/\//i.test(url)) throw bad('Le lien doit commencer par http:// ou https://');
+  return db.prepare('INSERT INTO wishes (person_id, title, url, note, status) VALUES (?, ?, ?, ?, ?)').run(
+    personId, str(body.title, 120, 'Titre'), url, str(body.note, 500), status
+  ).lastInsertRowid;
+}
+
+// A wish the owner adds for someone is already accepted: they chose to print it.
+route('POST', '/api/wishes', 'admin', ({ body }) => {
+  const person = mustExist('people', int(body.person_id, 1, Number.MAX_SAFE_INTEGER, 'Personne'));
+  return { id: addWish(person.id, body, 'accepted') };
+});
 route('PUT', '/api/wishes/:id', 'admin', ({ params, body }) => {
   if (!['requested', 'accepted', 'printed', 'declined'].includes(body.status)) throw bad('Statut invalide');
   mustExist('wishes', params.id);
@@ -1074,13 +1087,7 @@ route('GET', '/api/my', 'guest', ({ person }) => ({
 route('POST', '/api/my/wishes', 'guest', ({ person, body }) => {
   const open = db.prepare("SELECT COUNT(*) AS n FROM wishes WHERE person_id = ? AND status = 'requested'").get(person.id).n;
   if (open >= 30) throw bad('Trop de demandes en attente');
-  const url = str(body.url, 500);
-  if (url && !/^https?:\/\//i.test(url)) throw bad('Le lien doit commencer par http:// ou https://');
-  return {
-    id: db.prepare('INSERT INTO wishes (person_id, title, url, note) VALUES (?, ?, ?, ?)').run(
-      person.id, str(body.title, 120, 'Titre'), url, str(body.note, 500)
-    ).lastInsertRowid,
-  };
+  return { id: addWish(person.id, body, 'requested') };
 });
 route('DELETE', '/api/my/wishes/:id', 'guest', ({ person, params }) => {
   db.prepare("DELETE FROM wishes WHERE id = ? AND person_id = ? AND status = 'requested'").run(params.id, person.id);

@@ -276,6 +276,9 @@ function printCard(p, admin) {
   </article>`;
 }
 
+const wishFields = title => field('title', title, '', 'required maxlength="120"') + field('url', t('wishUrl'), '', 'type="url" maxlength="500" placeholder="https://"') +
+  `<label>${t('wishNote')}<textarea name="note" maxlength="500" rows="3"></textarea></label>`;
+
 function wishCard(w, admin) {
   const title = isLink(w.url) ? `<a href="${h(w.url)}" target="_blank" rel="noopener noreferrer">${h(w.title)}</a>` : h(w.title);
   let buttons = '';
@@ -402,7 +405,10 @@ const views = {
   wishes() {
     const order = ['requested', 'accepted', 'printed', 'declined'];
     const sorted = [...state.wishes].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status));
-    return { body: sorted.length ? grid(sorted.map(w => wishCard(w, true))) : empty('wishes') };
+    return {
+      head: state.people.length ? `<button class="primary" data-act="adminWish">${icons.plus}${t('add')}</button>` : '',
+      body: sorted.length ? grid(sorted.map(w => wishCard(w, true))) : empty('wishes'),
+    };
   },
 };
 
@@ -1149,10 +1155,15 @@ const actions = {
     await refresh();
   },
   delWish: id => remove(`/api/wishes/${id}`),
+  adminWish() {
+    const people = state.people.map(p => `<option value="${p.id}">${h(p.name)}</option>`).join('');
+    const body = `<label>${t('wishFor')}<select name="person_id" required>${people}</select></label>` + wishFields(t('wishModel'));
+    openDialog(t('newWishFor'), body, async fd => {
+      await api('POST', '/api/wishes', Object.fromEntries(fd));
+    });
+  },
   wish() {
-    const body = field('title', t('wishTitle'), '', 'required maxlength="120"') + field('url', t('wishUrl'), '', 'type="url" maxlength="500" placeholder="https://"') +
-      `<label>${t('wishNote')}<textarea name="note" maxlength="500" rows="3"></textarea></label>`;
-    openDialog(t('newWish'), body, async fd => {
+    openDialog(t('newWish'), wishFields(t('wishTitle')), async fd => {
       await api('POST', '/api/my/wishes', Object.fromEntries(fd));
     }, { submitLabel: t('send') });
   },
