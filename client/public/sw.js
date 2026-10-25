@@ -1,7 +1,9 @@
 // Keeps the app shell available offline, and shows the owner's notifications. API calls always
 // go to the network.
-const CACHE = 'shell-v13';
-const SHELL = ['/', '/style.css', '/theme.js', '/app.js', '/select.js', '/i18n.js', '/tigertag.js', '/tigertag-db.js', '/fonts/geist-latin.woff2', '/fonts/geist-latin-ext.woff2', '/fonts/geist-mono-latin.woff2', '/fonts/geist-mono-latin-ext.woff2', '/icon-192.png', '/icons.svg'];
+// The server fills in the files of the built app and their version (see SHELL in server.js):
+// a new version of the app replaces the cache of the previous one.
+const CACHE = 'shell-__VERSION__';
+const SHELL = __SHELL__;
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));

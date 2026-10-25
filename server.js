@@ -1,6 +1,6 @@
 import http from 'node:http';
-import { readFileSync, mkdirSync, existsSync } from 'node:fs';
-import { randomBytes } from 'node:crypto';
+import { readFileSync, readdirSync, mkdirSync, existsSync } from 'node:fs';
+import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
@@ -1108,14 +1108,22 @@ route('DELETE', '/api/my/wishes/:id', 'guest', ({ person, params }) => {
 
 // ---------- static files ----------
 
+// The interface, built by `npm run build` (Vite) into dist/: every file is read once, at startup.
+const DIST = path.join(__dirname, 'dist');
+if (!existsSync(path.join(DIST, 'index.html'))) {
+  console.error('The interface is not built: run "npm run build" first.');
+  process.exit(1);
+}
 const TYPES = { '.css': 'text/css', '.js': 'text/javascript', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.woff2': 'font/woff2' };
 const STATIC = new Map(
-  ['style.css', 'theme.js', 'app.js', 'select.js', 'i18n.js', 'tigertag.js', 'tigertag-db.js', 'sw.js', 'icon-192.png', 'icon-512.png', 'icon-maskable-192.png', 'icon-maskable-512.png', 'apple-touch-icon.png', 'favicon.svg', 'favicon-32.png', 'favicon.ico', 'fonts/geist-latin.woff2', 'fonts/geist-latin-ext.woff2', 'fonts/geist-mono-latin.woff2', 'fonts/geist-mono-latin-ext.woff2'].map(name => [
-    '/' + name,
-    { type: TYPES[path.extname(name)], data: readFileSync(path.join(__dirname, 'public', name)) },
-  ])
+  readdirSync(DIST, { recursive: true, withFileTypes: true })
+    .filter(f => f.isFile() && TYPES[path.extname(f.name)])
+    .map(f => {
+      const file = path.join(f.parentPath, f.name);
+      return ['/' + path.relative(DIST, file).split(path.sep).join('/'), { type: TYPES[path.extname(f.name)], data: readFileSync(file) }];
+    })
 );
-// The Lucide icons the interface uses (see `icon` in public/app.js), gathered at startup from the
+// The Lucide icons the interface uses (see `icons` in client/src/ui.jsx), gathered at startup from the
 // lucide-static package into one small sprite: the browser loads 18 icons, not the whole set.
 const ICONS = ['plus', 'scan-barcode', 'settings', 'log-out', 'sun', 'moon', 'sun-moon', 'trash-2', 'refresh-cw', 'link', 'euro', 'x', 'unlink', 'disc-3', 'box', 'users', 'heart', 'bell'];
 const LUCIDE = path.join(__dirname, 'node_modules', 'lucide-static', 'icons');
@@ -1125,7 +1133,15 @@ const sprite = ICONS.map(name => {
   return `<symbol id="${name}" viewBox="0 0 24 24">${shapes}</symbol>`;
 });
 STATIC.set('/icons.svg', { type: 'image/svg+xml', data: Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg"><!-- Lucide icons, ISC License: https://lucide.dev/license -->${sprite.join('')}</svg>`) });
-const INDEX = readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+const INDEX = readFileSync(path.join(DIST, 'index.html'), 'utf8');
+// What the service worker keeps for offline use: the page and what it loads, named after a hash of
+// them all, so that each new build replaces the previous cache.
+const SHELL = ['/', ...[...STATIC.keys()].filter(p => /^\/(assets|fonts)\/|^\/(theme\.js|icon-192\.png|icons\.svg)$/.test(p))];
+const SHELL_VERSION = createHash('sha256').update(INDEX).update(JSON.stringify(SHELL)).update(STATIC.get('/icons.svg').data).digest('hex').slice(0, 12);
+STATIC.set('/sw.js', {
+  type: 'text/javascript',
+  data: Buffer.from(STATIC.get('/sw.js').data.toString('utf8').replace('__VERSION__', SHELL_VERSION).replace('__SHELL__', JSON.stringify(SHELL))),
+});
 
 // The manifest is per invite link so that an installed guest app reopens on the guest's own page.
 function manifest(guestToken) {
@@ -1173,8 +1189,8 @@ function readBody(req) {
   });
 }
 
-function send(res, status, type, data) {
-  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': 'no-cache' });
+function send(res, status, type, data, cache = 'no-cache') {
+  res.writeHead(status, { 'Content-Type': type, 'Cache-Control': cache });
   res.end(data);
 }
 
@@ -1214,14 +1230,15 @@ async function handle(req, res) {
   const guest = /^\/g\/([\w-]{10,64})$/.exec(p);
   if (p === '/' || guest) {
     const href = '/manifest.webmanifest' + (guest ? `?g=${guest[1]}` : '');
-    return send(res, 200, 'text/html; charset=utf-8', INDEX.replace('__MANIFEST__', href));
+    return send(res, 200, 'text/html; charset=utf-8', INDEX.replace('href="/manifest.webmanifest"', `href="${href}"`));
   }
   if (p === '/manifest.webmanifest') {
     const g = url.searchParams.get('g') || '';
     return send(res, 200, 'application/manifest+json', manifest(/^[\w-]{10,64}$/.test(g) ? g : ''));
   }
   const file = STATIC.get(p);
-  if (file) return send(res, 200, file.type, file.data);
+  // built files carry a hash of their content in their name: they never change
+  if (file) return send(res, 200, file.type, file.data, p.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache');
   throw new HttpError(404, 'Introuvable');
 }
 
@@ -1233,5 +1250,6 @@ http
       send(res, e.status || 500, 'application/json', JSON.stringify({ error: e.status ? e.message : 'Erreur du serveur' }));
     });
   })
-  .listen(PORT, () => console.log(`3D Print Dashboard listening on port ${PORT}`));
+  // a full address, which the terminal turns into a link (in Docker, the public address is the one nginx serves)
+  .listen(PORT, () => console.log(`3D Print Dashboard listening on http://localhost:${PORT}`));
 startLive();

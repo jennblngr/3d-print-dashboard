@@ -5,14 +5,19 @@ A small installable web app (PWA) for one maker and their private circle.
 - **Owner (password):** filament spool inventory with barcode / RFID scanning, prints billed per gram of filament, payments, and the wishlist of everyone.
 - **Guests (private invite link, no account):** what they owe and why, their payment history, and a wishlist to ask for prints.
 
-No dependencies: Node 24+ and its built-in SQLite. Data lives in one file, `data/app.db`.
+Node 24+ and its built-in SQLite on the server; the interface is written in React (`client/`) and built with Vite into
+`dist/`, which the server serves. Data lives in one file, `data/app.db`.
 
 ## Run locally
 
 ```sh
+npm install            # once, and after each change of package.json
 npm run set-password   # asks for the owner password, stores only its hash in .env
-npm start              # http://localhost:3000
+npm start              # builds the interface, then http://localhost:3000
 ```
+
+While working on the interface, `npm run dev` serves it at http://localhost:5173 and reloads it on every change; the
+server must run alongside (`node server.js`) for the API.
 
 ## Deploy on a VPS
 
@@ -123,9 +128,9 @@ Recording a print takes the grams off the spool; deleting the print gives them b
   prefills the next spool of that product; scanning also lists the spools you already own with that barcode.
   Nothing is looked up online.
 - **TigerTag chips:** they are not in the NDEF format, so no browser can read them. The app can decode their memory
-  (`public/tigertag.js`, following the open [TigerTag specification](https://github.com/TigerTag-Project/TigerTag-RFID-Guide))
+  (`client/src/tigertag.js`, following the open [TigerTag specification](https://github.com/TigerTag-Project/TigerTag-RFID-Guide))
   when it is opened with the chip's bytes as hexadecimal text, from page 0, after `#tigertag=` in the URL. It then
   prefills brand, material, type, colour and weight, and identifies the spool by the chip's serial number. Reading
   the chip and opening that URL is the job of the Android companion app in `android/` (see below).
-  Brand and material names come from the public TigerTag registry (CC0), bundled in `public/tigertag-db.js`;
+  Brand and material names come from the public TigerTag registry (CC0), bundled in `client/src/tigertag-db.js`;
   refresh it with `node scripts/make-tigertag-db.js <registry database folder>`.

@@ -97,9 +97,11 @@ d'elles est violée, préviens-moi immédiatement.
   perdu, les sauvegardes le sont aussi).
 
 ## Conventions et décisions prises
-- Pas d'étape de build : Node 24 et sa base SQLite intégrée, interface en
-  JavaScript simple. Les paquets npm sont acceptés (depuis le 25/10/2026),
+- Node 24 et sa base SQLite intégrée. Les paquets npm sont autorisés,
   avec mon accord pour chacun ; installés dans l'image Docker par `npm ci`.
+- Interface en React (dossier `client/`), construite par Vite ; l'image Docker
+  la construit elle-même (depuis le 25/10/2026). Sur le Mac, `npm start`
+  construit l'interface puis lance l'app.
 - Hébergement sur mon VPS, dans `/var/www/3d-print-dashboard`, avec Docker.
   Le serveur héberge d'autres projets : l'application n'écoute que sur le
   serveur lui-même (port 3020) et c'est le Nginx déjà en place, avec certbot,
@@ -227,14 +229,14 @@ d'elles est violée, préviens-moi immédiatement.
   redescendent à la fermeture ; message bref en haut. Les confirmations
   (supprimer, remplacer un lien...) passent par une fenêtre de l'app, jamais
   par celle du navigateur.
-- Listes déroulantes dessinées par l'app (`public/select.js`), identiques dans
+- Listes déroulantes dessinées par l'app (`client/src/Select.jsx`), identiques dans
   tous les navigateurs ; la vraie liste du navigateur reste cachée et c'est elle
   qui garde la valeur enregistrée.
 - Animations courtes au changement d'onglet uniquement (pas quand la page se
   redessine après un enregistrement) : repère qui glisse sous l'onglet et
   contenu en fondu sur téléphone et tablette, panneau qui s'élargit sur
   ordinateur. Aucune animation si l'appareil demande moins de mouvements.
-- Toute l'apparence passe par `public/style.css` et ses variables (couleurs,
+- Toute l'apparence passe par `client/src/style.css` et ses variables (couleurs,
   arrondis, polices) : un nouvel écran réutilise les classes existantes, sans
   style écrit à part. Espacements sur une seule échelle : 4, 8, 12, 16, 24
   et 32 px. Thèmes clair et sombre : selon le réglage de l'appareil
