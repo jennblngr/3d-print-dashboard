@@ -464,6 +464,19 @@ dialog .delete-zone { padding-top: 16px; border-top: 1px dashed var(--line-stron
 :is(.app, dialog) .pick-opt[aria-selected='true']::before { content: "›"; color: var(--accent); }
 :is(.app, dialog) .pick-group { padding: 12px 12px 4px; font: 500 11px/1.3 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 
+/* date fields: a calendar drawn by DateInput.jsx, in French whatever the browser's language */
+:is(.app, dialog) .cal { width: 296px; min-width: 0 !important; padding: 8px; }
+:is(.app, dialog) .cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+:is(.app, dialog) .cal-head button.icon { border-color: transparent; background: none; }
+:is(.app, dialog) .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+:is(.app, dialog) .cal-grid abbr { padding: 4px 0; font: 500 11px/1.3 var(--mono); text-align: center; text-decoration: none; text-transform: uppercase; color: var(--muted); }
+:is(.app, dialog) .cal-grid [role='gridcell'] { display: flex; align-items: center; justify-content: center; height: 32px; border: 1px solid transparent; border-radius: 6px; font: 400 13px/1 var(--sans); cursor: pointer; }
+:is(.app, dialog) .cal-grid .out { color: var(--muted); opacity: 0.6; }
+:is(.app, dialog) .cal-grid .today { border-color: var(--line-strong); }
+:is(.app, dialog) .cal-grid :is(.active, [role='gridcell']:hover) { background: var(--panel-2); }
+:is(.app, dialog) .cal-grid [role='gridcell'][aria-selected='true'] { background: var(--accent); color: var(--on-accent); font-weight: 600; opacity: 1; }
+:is(.app, dialog) .cal > button.link { width: 100%; margin-top: 4px; }
+
 /* a solid red button, to confirm a deletion */
 :is(.app, dialog) button.danger.solid { border-color: var(--red); background: var(--red); color: var(--on-ink); font-weight: 600; }
 

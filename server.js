@@ -1128,7 +1128,7 @@ const STATIC = new Map(
 );
 // The Lucide icons the interface uses (see `icons` in client/src/ui.jsx), gathered at startup from the
 // lucide-static package into one small sprite: the browser loads 18 icons, not the whole set.
-const ICONS = ['plus', 'scan-barcode', 'settings', 'log-out', 'sun', 'moon', 'sun-moon', 'trash-2', 'refresh-cw', 'link', 'euro', 'x', 'unlink', 'disc-3', 'box', 'users', 'heart', 'bell'];
+const ICONS = ['plus', 'scan-barcode', 'settings', 'log-out', 'sun', 'moon', 'sun-moon', 'trash-2', 'refresh-cw', 'link', 'euro', 'x', 'unlink', 'disc-3', 'box', 'users', 'heart', 'bell', 'chevron-left', 'chevron-right'];
 const LUCIDE = path.join(__dirname, 'node_modules', 'lucide-static', 'icons');
 const sprite = ICONS.map(name => {
   // keeps the shapes only: the page sets the stroke, so every icon draws the same

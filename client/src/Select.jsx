@@ -172,17 +172,18 @@ export function Select({ options, value, defaultValue, onChange, name, required,
   );
 }
 
-// Under the button, or above it when the screen has more room there.
-function place(button, list) {
+// Under the button, or above it when there is less than `need` under it and more room above.
+// The list is never taller than `tall`.
+export function place(button, list, tall = 320, need = 200) {
   const r = button.getBoundingClientRect();
   const below = innerHeight - r.bottom - 12;
   const above = r.top - 12;
-  const up = below < 200 && above > below;
+  const up = below < need && above > below;
   Object.assign(list.style, {
     left: `${Math.max(8, r.left)}px`,
     minWidth: `${r.width}px`,
     maxWidth: `${innerWidth - Math.max(8, r.left) - 8}px`,
-    maxHeight: `${Math.min(320, up ? above : below)}px`,
+    maxHeight: `${Math.min(tall, up ? above : below)}px`,
     top: up ? 'auto' : `${r.bottom + 4}px`,
     bottom: up ? `${innerHeight - r.top + 4}px` : 'auto',
   });

@@ -3,6 +3,7 @@ import { t } from './i18n.js';
 import { api, copySources, eur, fmtGrams, isMine, localDay, nextSpool, showDate, spoolName, suggestSpool, toCents, today } from './lib.js';
 import { getState, page, useStore } from './store.js';
 import { closeDialog, DialogForm, Field, icons, openDialog, remove, run, toast } from './ui.jsx';
+import { DateInput } from './DateInput.jsx';
 import { Select } from './Select.jsx';
 import { PrintCard, SpoolCard } from './cards.jsx';
 
@@ -322,7 +323,7 @@ function PrintForm({ pre, edit, copy, onCopy }) {
         {failed && <p className="hint">{t('failedOwnerOnly')}</p>}
       </fieldset>
       <Field name="title" label={t('title')} defaultValue={p.title || ''} required maxLength={120} />
-      <Field name="printed_at" label={t('date')} defaultValue={p.printed_at || today()} type="date" required />
+      <label>{t('date')}<DateInput name="printed_at" defaultValue={p.printed_at || today()} /></label>
       <fieldset>
         <legend>{t('filament')}</legend>
         <div id="lines">
@@ -427,7 +428,7 @@ export function paymentDialog(person) {
       await api('POST', '/api/payments', { person_id: person.id, amount_cents: toCents(fd.get('amount')), paid_at: fd.get('paid_at'), note: fd.get('note') });
     }}>
       <Field name="amount" label={t('amount')} defaultValue={due} required inputMode="decimal" />
-      <Field name="paid_at" label={t('date')} defaultValue={today()} type="date" required />
+      <label>{t('date')}<DateInput name="paid_at" defaultValue={today()} /></label>
       <Field name="note" label={t('note')} maxLength={200} />
     </DialogForm>
   );
