@@ -528,6 +528,8 @@ function printSnapshot(id) {
       printed_at: prints[0].printed_at,
       adjust_cents: billedPart ? billedPart.adjust_cents * prints.length : 0,
       adjust_note: billedPart?.adjust_note || '',
+      // whether each person's part is billed, gifted or still to decide
+      billing: Object.fromEntries(prints.filter(p => p.person_id !== null).map(p => [p.person_id, p.billing])),
       // a failed print read from the Bambu account stays the owner's own: nobody is billed for it
       failed: prints.some(p => db.prepare('SELECT 1 FROM bambu_prints WHERE print_id = ? AND failed = 1').get(p.id)),
       lines: [...lines.values()].map(l => ({ spool_id: l.spool_id, label: l.label, grams: Math.round(l.grams * 100) / 100, cost_cents: l.cost_cents })),
@@ -548,7 +550,8 @@ function removePrint(snapshot) {
 
 // Must run inside tx(): an edited print is recorded again from scratch, keeping what ties it
 // to the rest: its Bambu Lab print, the wish it answered, when it was first recorded, and
-// whether each person's part is billed. A person added to it waits for the owner's decision.
+// whether each person's part is billed, unless the form says otherwise. A person added to it
+// without a choice waits for the owner's decision.
 function editPrint(id, body) {
   const before = printSnapshot(id);
   if (before.form.failed) ownerOnly(body);
@@ -558,15 +561,24 @@ function editPrint(id, body) {
   for (const p of created) {
     const kept = before.prints.find(o => o.person_id !== null && o.person_id === p.person_id);
     db.prepare('UPDATE prints SET wish_id = ?, created_at = ?, billing = ? WHERE id = ?')
-      .run(kept?.wish_id ?? null, before.prints[0].created_at, kept?.billing ?? (p.person_id === null ? 'billed' : 'pending'), p.id);
+      .run(kept?.wish_id ?? null, before.prints[0].created_at,
+        p.person_id === null ? 'billed' : chosenBilling(body, p.person_id) ?? kept?.billing ?? 'pending', p.id);
   }
   for (const b of bambuIds) db.prepare("UPDATE bambu_prints SET state = 'billed', print_id = ? WHERE id = ?").run(newId, b);
   return { id: newId };
 }
 
+// What the owner chose in the form for a person's part (`billing`: person id → choice):
+// billed or gifted; anything else leaves it to decide.
+const chosenBilling = (body, personId) => {
+  const choice = body.billing?.[personId];
+  return choice === 'billed' || choice === 'gifted' ? choice : null;
+};
+
 // Must run inside tx(): takes a print's filament out of the spools and assigns it.
 // `person_ids` lists who it is for; null stands for the owner, whose part is billed to nobody.
-// A person's part counts in what they owe only once the owner bills it (see /billing).
+// A person's part counts in what they owe only once the owner bills it, in the form
+// (`billing`, see chosenBilling) or later (see /billing).
 // Several people share a print in equal parts: each gets a print of their own holding their
 // part of the filament and of the adjustment, so every amount is computed as for any print.
 // `previous` is only given when a print is edited: the filament it already used keeps the
@@ -614,7 +626,8 @@ function createPrint(body, previous = null) {
     }
     const id = db.prepare(
       'INSERT INTO prints (person_id, title, printed_at, adjust_cents, adjust_note, wish_id, group_id, billing) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-    ).run(person?.id ?? null, title, printedAt, person ? Math.round(adjust / parts) : 0, person ? note : '', wishId, groupId, person ? 'pending' : 'billed').lastInsertRowid;
+    ).run(person?.id ?? null, title, printedAt, person ? Math.round(adjust / parts) : 0, person ? note : '', wishId, groupId,
+      person ? chosenBilling(body, person.id) ?? 'pending' : 'billed').lastInsertRowid;
     if (parts > 1 && groupId === null) {
       groupId = id;
       db.prepare('UPDATE prints SET group_id = ? WHERE id = ?').run(groupId, id);

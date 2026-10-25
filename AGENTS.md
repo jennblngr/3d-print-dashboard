@@ -151,9 +151,11 @@ d'elles est violée, préviens-moi immédiatement.
   « Moi » compris), toujours à parts égales : chacun reçoit sa part du filament
   et du coût. La supprimer la supprime
   pour tout le monde. Un proche voit que c'est partagé, jamais avec qui.
-- Une impression est d'abord associée à une ou plusieurs personnes, « à
-  décider » ; je choisis ensuite, part par part, de la facturer ou de
-  l'offrir, et je peux changer d'avis. Seules les parts facturées comptent
+- Dans le formulaire d'une impression, je choisis pour chaque personne de
+  facturer sa part (choix par défaut) ou de l'offrir (décidé le 26/10/2026) ;
+  je peux changer d'avis ensuite sur la carte. Une impression enregistrée
+  autrement (ancienne, ou personne ajoutée sans choix) reste « à décider »
+  jusqu'à mon choix. Seules les parts facturées comptent
   dans les montants dus. Un proche voit ses impressions facturées et
   offertes, jamais celles encore à décider. L'onglet Personnes affiche le
   coût total des impressions de chacun, quel que soit leur état. Les
