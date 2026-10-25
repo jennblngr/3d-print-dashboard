@@ -18,6 +18,18 @@ export const activeSpools = state => state.spools.filter(s => !s.archived);
 export const isMine = p => p.person_id == null;
 export const toDecide = p => !isMine(p) && p.billing === 'pending';
 
+// The parts of a shared print (one per person) gathered under one entry, in the order the
+// server listed them; a print that is not shared is a group of one.
+export function groupPrints(prints) {
+  const groups = new Map();
+  for (const p of prints) {
+    const key = p.group_id ?? p.id;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(p);
+  }
+  return [...groups.values()].map(parts => parts.sort((a, b) => a.id - b.id));
+}
+
 export async function api(method, url, body) {
   const headers = {};
   if (body) headers['Content-Type'] = 'application/json';
