@@ -72,7 +72,7 @@ async function refresh() {
     return guestToken ? renderMessage(t('badLink')) : renderLogin();
   }
   guestToken ? renderGuest() : renderAdmin();
-  if (!guestToken) takeTagFromUrl();
+  if (!guestToken) takeHash();
 }
 
 // The toast is a popover: showing it again lifts it above a dialog opened in the meantime.
@@ -213,6 +213,7 @@ const icons = {
   link: icon('link'),
   pay: icon('euro'),
   close: icon('x', 18),
+  bell: icon('bell'),
   brokenLink: icon('unlink', 40, 1.2),
   ...Object.fromEntries(Object.entries(SECTION_ICONS).map(([k, name]) => [k, icon(name, 20)])),
 };
@@ -348,6 +349,7 @@ const views = {
     return {
       head: `<button class="primary" data-act="print">${icons.plus}${t('newPrint')}</button>`,
       body: `<div class="cols"><div>
+        <div id="live">${liveBlock()}</div>
         ${pending.length ? `<h3>${t('toAssign')}</h3>${grid(pending.map(bambuCard))}` : ''}
         ${undecided.length ? `<h3>${t('toDecide')}</h3>${grid(undecided.map(p => printCard(p, true)))}` : ''}
         ${pending.length || undecided.length ? `<h3>${t('prints')}</h3>` : ''}
@@ -462,10 +464,12 @@ function showTab() {
 // A print read from the Bambu Lab account, waiting for the owner to say what it was for.
 function bambuCard(b) {
   const planned = b.failed ? ` · ${t('plannedGrams', { grams: fmtGrams(b.planned_g, 1) })}` : '';
+  const dot = b.color_hex ? `<i class="dot" style="--c:${h(b.color_hex)}"></i>` : '';
   return `<article class="card col todo ${b.failed ? 'failed' : ''}">
     <div class="row">
+      ${b.has_cover ? `<img class="thumb" src="/api/bambu/prints/${b.id}/cover" alt="" loading="lazy">` : ''}
       <div class="grow"><strong>${h(b.title)}</strong>
-        <small>${showDate(localDay(b.ended_at))}${b.material ? ' · ' + h(b.material) : ''} · ${fmtGrams(b.suggested_g, 1)} g${planned}</small></div>
+        <small>${showDate(localDay(b.ended_at))}${b.material ? ` · ${dot}${h(b.material)}` : ''} · ${fmtGrams(b.suggested_g, 1)} g${planned}</small></div>
       ${b.failed ? `<span class="chip declined">${t('failedPrint')}</span>` : ''}
     </div>
     <div class="bar choices">
@@ -492,14 +496,130 @@ function bambuPanel() {
     : b.error ? t('bambuUnreachable')
     : b.last_sync ? t('bambuOn', { date: new Date(b.last_sync).toLocaleString(lang) })
     : t('bambuNever');
+  const liveNote = b.connected && !broken
+    ? `<p class="note"><span class="status ${b.live === 'on' ? '' : 'off'}" aria-hidden="true"></span><span>${t('live_' + (b.live || 'off'))}</span></p>` : '';
   return `<h3>${t('bambuTitle')}</h3>
     <article class="card col bambu">
       <p class="note"><span class="status ${b.connected && !b.error ? '' : 'off'}" aria-hidden="true"></span><span>${status}</span></p>
+      ${liveNote}
       <div class="bar">
         ${!b.connected || broken ? `<button class="primary" data-act="bambuConnect">${t('bambuConnect')}</button>` : `<button data-act="bambuSync">${icons.refresh}${t('bambuSync')}</button>`}
         ${b.connected ? `<button class="danger" data-act="bambuDisconnect">${t('bambuDisconnect')}</button>` : ''}
       </div>
+    </article>
+    ${b.connected ? `<h3>${t('notifications')}</h3><article class="card col bambu" id="push">${pushBlock()}</article>` : ''}`;
+}
+
+// ---------- live printer status ----------
+
+// "1 h 05" or "12 min"
+const duration = min => (min >= 60 ? `${Math.floor(min / 60)} h ${String(min % 60).padStart(2, '0')}` : `${min} min`);
+
+function liveBlock() {
+  const busy = state.bambu_live || [];
+  if (!busy.length) return '';
+  return `<h3>${t('printingNow')}</h3>${grid(busy.map(p => {
+    const details = [
+      p.remaining_min != null && p.state !== 'PREPARE' ? t('timeLeft', { time: duration(p.remaining_min) }) : '',
+      p.layers ? t('layerOf', { layer: p.layer ?? 0, layers: p.layers }) : '',
+      p.error ? t('printerError', { code: `${p.error.slice(0, 4)}-${p.error.slice(4)}` }) : '',
+    ].filter(Boolean).join(' · ');
+    const chip = p.state === 'PAUSE' ? `<span class="chip declined">${t('livePaused')}</span>`
+      : p.state === 'RUNNING' ? `<span class="chip requested">${t('liveRunning')}</span>`
+      : `<span class="chip">${t('livePreparing')}</span>`;
+    const pct = Math.max(0, Math.min(100, p.percent ?? 0));
+    return `<article class="card col live">
+      <div class="row">
+        <div class="grow"><strong>${h(p.title || p.name)}</strong><small>${h(p.name)}${details ? ' · ' + details : ''}</small></div>
+        ${chip}
+      </div>
+      <span class="meter"><i style="width:${pct}%"></i></span>
+      <small><b class="qty">${pct} %</b></small>
     </article>`;
+  }))}`;
+}
+
+// While the owner has the app in front of them, the live status follows the printer, and a
+// print that just ended shows up without reloading.
+async function pollLive() {
+  if (guestToken || !state?.bambu?.connected || document.visibilityState !== 'visible') return;
+  let data;
+  try {
+    data = await api('GET', '/api/bambu/live');
+  } catch {
+    return;
+  }
+  if (data.pending !== state.bambu_prints.filter(b => b.state === 'pending').length) return refresh();
+  if (JSON.stringify(data.live) === JSON.stringify(state.bambu_live)) return;
+  state.bambu_live = data.live;
+  const el = $('#live', app);
+  if (el) el.innerHTML = liveBlock();
+}
+setInterval(pollLive, 20_000);
+document.addEventListener('visibilitychange', pollLive);
+
+// ---------- notifications (this device only) ----------
+
+const pushSupported = 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+// 'on', 'off', 'denied' (blocked in the browser settings) or 'unsupported'
+let pushState = pushSupported ? 'off' : 'unsupported';
+
+async function pushSubscription() {
+  if (!pushSupported) return null;
+  const reg = await navigator.serviceWorker.getRegistration();
+  return (await reg?.pushManager.getSubscription()) || null;
+}
+async function checkPush() {
+  if (!pushSupported) return;
+  pushState = Notification.permission === 'denied' ? 'denied' : (await pushSubscription().catch(() => null)) ? 'on' : 'off';
+  const el = $('#push', app);
+  if (el) el.innerHTML = pushBlock();
+}
+
+function pushBlock() {
+  if (pushState === 'on') {
+    return `<p class="note"><span class="status" aria-hidden="true"></span><span>${t('pushOn')}</span></p>
+      <div class="bar"><button data-act="pushTest">${icons.bell}${t('pushTest')}</button><button class="danger" data-act="pushOff">${t('pushDisable')}</button></div>`;
+  }
+  if (pushState === 'off') {
+    return `<p class="hint">${t('pushHint')}</p>
+      <div class="bar"><button class="primary" data-act="pushOn">${icons.bell}${t('pushEnable')}</button></div>`;
+  }
+  return `<p class="hint">${t(pushState === 'denied' ? 'pushDenied' : 'pushUnsupported')}</p>`;
+}
+
+const keyBytes = key => Uint8Array.from(atob(key.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0));
+// Forgets this device on the server and in the browser.
+async function pushUnsubscribe() {
+  const sub = await pushSubscription().catch(() => null);
+  if (!sub) return;
+  await api('DELETE', '/api/push/subscriptions', { endpoint: sub.endpoint }).catch(() => {});
+  await sub.unsubscribe().catch(() => {});
+}
+
+// ---------- spool suggested for a Bambu print ----------
+
+const rgb = hex => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
+// how far apart two colours look ("redmean" distance: 0 the same, about 765 black to white)
+function colorDistance(a, b) {
+  const [r1, g1, b1] = rgb(a);
+  const [r2, g2, b2] = rgb(b);
+  const r = (r1 + r2) / 2;
+  return Math.sqrt((2 + r / 256) * (r1 - r2) ** 2 + 4 * (g1 - g2) ** 2 + (2 + (255 - r) / 256) * (b1 - b2) ** 2);
+}
+// The spool a Bambu print most likely used: the same material and the closest colour, an
+// opened spool with filament left before a sealed or empty one. Without a close enough colour,
+// the spool used last. `matched` says whether the choice comes from what Bambu reported.
+function suggestSpool(b) {
+  const norm = v => (v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const pool = activeSpools().filter(s => !b.material || norm(s.material) === norm(b.material));
+  if (b.color_hex && pool.length) {
+    const score = s => colorDistance(s.color_hex, b.color_hex) + (s.sealed ? 30 : 0) + (s.remaining_g <= 0 ? 200 : 0);
+    const best = pool.reduce((x, y) => (score(y) < score(x) ? y : x));
+    if (colorDistance(best.color_hex, b.color_hex) <= 120) return { id: best.id, matched: true };
+  }
+  if (!b.color_hex && pool.length === 1) return { id: pool[0].id, matched: true };
+  return { id: state.last_spool_id, matched: false };
 }
 
 function spoolCard(s) {
@@ -564,9 +684,19 @@ function handleTag(code, details = {}) {
   spoolDialog(found, { ...details, code });
 }
 
-// The Android companion app reads TigerTag chips (a browser cannot) and opens this app with the
-// chip memory after "#tigertag=". The fragment never leaves the phone: browsers do not send it.
-function takeTagFromUrl() {
+// What the app is opened for, after "#":
+// - "bambu=<id>": a notification about a print that just ended, to assign it;
+// - "tigertag=<chip>": the Android companion app read a TigerTag chip (a browser cannot), and
+//   passes its memory. The fragment never leaves the phone: browsers do not send it.
+function takeHash() {
+  const bambu = /^#bambu(?:=(\d+))?$/.exec(location.hash);
+  if (bambu) {
+    history.replaceState(null, '', location.pathname);
+    if (tab !== 'prints') actions.tab('prints');
+    if (!bambu[1]) return;
+    const b = state.bambu_prints.find(x => x.id === +bambu[1]);
+    return b?.state === 'pending' ? actions.bambuBill(b.id) : toast(t('alreadyAssigned'));
+  }
   const match = /^#tigertag=(.+)$/.exec(location.hash);
   if (!match) return;
   history.replaceState(null, '', location.pathname);
@@ -580,7 +710,7 @@ function takeTagFromUrl() {
   }
 }
 window.addEventListener('hashchange', () => {
-  if (state && !guestToken) takeTagFromUrl();
+  if (state && !guestToken) takeHash();
 });
 
 // A barcode names a product, which several spools can share: list the spools that carry it
@@ -690,6 +820,7 @@ function printDialog(pre = {}, edit = null, copy = null) {
       <div id="lines">${rows}</div>
       ${spools.length ? `<button type="button" class="ghost" data-act="addLine">${t('addFilament')}</button>` : ''}
       ${pre.failed ? `<p class="hint">${t('failedHint')}</p>` : ''}
+      ${pre.suggested ? `<p class="hint">${t('spoolSuggested')}</p>` : ''}
     </fieldset>
     <div id="billing">
       ${field('adjust', t('adjust'), edit?.adjust_cents ? (edit.adjust_cents / 100).toFixed(2) : '', 'inputmode="decimal"')}
@@ -876,6 +1007,8 @@ const actions = {
     renderAdmin();
   },
   async logout() {
+    // a device signed out of no longer gets the owner's notifications
+    await pushUnsubscribe();
     await api('POST', '/api/logout');
     refresh();
   },
@@ -897,7 +1030,8 @@ const actions = {
     const b = state.bambu_prints.find(x => x.id === id);
     // a failed print is billed to nobody: it can only be the owner's own
     const failed = !!b.failed;
-    printDialog({ title: b.title, grams: b.suggested_g, printed_at: localDay(b.ended_at), spool_id: state.last_spool_id, bambu_id: b.id, failed, person_id: failed ? null : undefined });
+    const spool = suggestSpool(b);
+    printDialog({ title: b.title, grams: b.suggested_g, printed_at: localDay(b.ended_at), spool_id: spool.id, suggested: spool.matched, bambu_id: b.id, failed, person_id: failed ? null : undefined });
   },
   async bambuIgnore(id) {
     await api('POST', `/api/bambu/prints/${id}/ignore`);
@@ -912,6 +1046,34 @@ const actions = {
     await api('POST', '/api/bambu/sync');
     await refresh();
     toast(t('bambuChecked'));
+  },
+  async pushOn() {
+    if ((await Notification.requestPermission()) !== 'granted') return checkPush();
+    const reg = await navigator.serviceWorker.ready;
+    const { key } = await api('GET', '/api/push/key');
+    let sub;
+    try {
+      sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyBytes(key) });
+    } catch {
+      throw new Error(t('pushFailed'));
+    }
+    try {
+      await api('POST', '/api/push/subscriptions', sub.toJSON());
+    } catch (e) {
+      await sub.unsubscribe().catch(() => {});
+      throw e;
+    }
+    await checkPush();
+    toast(t('pushEnabled'));
+  },
+  async pushOff() {
+    await pushUnsubscribe();
+    await checkPush();
+    toast(t('pushDisabled'));
+  },
+  async pushTest() {
+    await api('POST', '/api/push/test');
+    toast(t('pushSent'));
   },
   async bambuDisconnect() {
     if (!(await ask(t('confirmBambuDisconnect'), t('bambuDisconnect')))) return;
@@ -1012,5 +1174,11 @@ document.addEventListener('click', async e => {
 watchSelects(dlg);
 watchSelects(app);
 
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then(() => !guestToken && checkPush()).catch(() => {});
+  // a notification tapped while the app is open, when the window could not be sent there
+  navigator.serviceWorker.addEventListener('message', e => {
+    if (typeof e.data?.url === 'string') location.hash = new URL(e.data.url, location.origin).hash;
+  });
+}
 refresh();

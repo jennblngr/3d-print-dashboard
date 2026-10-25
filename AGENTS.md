@@ -191,9 +191,26 @@ d'elles est violée, préviens-moi immédiatement.
 - La connexion à Bambu se fait par un code reçu par e-mail ; mon mot de passe
   Bambu n'est jamais demandé. La clé d'accès obtenue reste sur le serveur
   (donc aussi dans les sauvegardes) et ne part jamais vers un navigateur.
-- Bambu Lab est le seul service externe appelé, par un accès non officiel qui
-  peut cesser de fonctionner : la saisie manuelle doit toujours rester
-  possible. On ne fait que lire le compte, jamais commander l'imprimante.
+- Services externes appelés : Bambu Lab, et le service d'envoi des
+  notifications du navigateur (celui de Google pour Chrome), validé le
+  25/10/2026. Bambu passe par un accès non officiel qui peut cesser de
+  fonctionner : la saisie manuelle doit toujours rester possible. On ne fait
+  que lire le compte, jamais commander l'imprimante.
+- Suivi en direct de l'imprimante (encart « En cours ») par la connexion temps
+  réel de Bambu, en écoute seule : le serveur n'envoie jamais rien à
+  l'imprimante, pas même une demande d'état. S'il est refusé, le relevé toutes
+  les 5 minutes continue seul. Il accélère la détection des fins d'impression.
+- Notifications (25/10/2026) : réservées au propriétaire, à activer sur chaque
+  appareil depuis l'onglet Impressions ; fin ou échec d'une impression (un
+  appui ouvre le formulaire d'attribution) et pause sur un problème. Chiffrées
+  pour l'appareil : Google les transporte sans pouvoir les lire. Se
+  déconnecter de l'application coupe les notifications de cet appareil.
+- Chaque impression relevée garde l'image de son modèle, téléchargée une fois
+  chez Bambu et servie par l'application ; elle est effacée 30 jours après
+  l'attribution ou l'abandon de l'impression.
+- Le formulaire d'attribution présélectionne la bobine de même matière et de
+  couleur la plus proche (bobine ouverte d'abord) : simple proposition, rien
+  n'est compté avant validation.
 - Toute évolution de la base doit convertir les données existantes au
   démarrage, sans rien perdre.
 - Demande-moi de tenir cette liste à jour.

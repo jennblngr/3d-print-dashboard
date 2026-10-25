@@ -6,7 +6,9 @@ import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { parseHash, verifyPassword } from './auth.js';
 import { createBackup, pruneBackups, lastBackupAt } from './backup.js';
-import { BambuError, requestCode, login as bambuLogin, recentPrints } from './bambu.js';
+import { BambuError, requestCode, login as bambuLogin, recentPrints, accountUid, printers, fetchCover } from './bambu.js';
+import { watchPrinters } from './bambu-live.js';
+import { newVapidKeys, vapidPublicKey, readSubscription, sendPush } from './push.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = +process.env.PORT || 3000;
@@ -164,7 +166,21 @@ db.exec(`
     state TEXT NOT NULL DEFAULT 'pending',
     print_id INTEGER REFERENCES prints(id) ON DELETE SET NULL,
     spool_id INTEGER REFERENCES spools(id) ON DELETE SET NULL,
-    grams REAL
+    grams REAL,
+    color_hex TEXT NOT NULL DEFAULT ''
+  );
+  -- the picture of a Bambu print's model, shown while it waits to be assigned
+  CREATE TABLE IF NOT EXISTS bambu_covers (
+    id INTEGER PRIMARY KEY REFERENCES bambu_prints(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    data BLOB NOT NULL
+  );
+  -- the owner's devices that asked for notifications (Web Push, see push.js)
+  CREATE TABLE IF NOT EXISTS push_subscriptions (
+    endpoint TEXT PRIMARY KEY,
+    p256dh TEXT NOT NULL,
+    auth TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
   );
 `);
 db.prepare('DELETE FROM sessions WHERE expires_at < ?').run(Date.now());
@@ -192,6 +208,10 @@ if (!db.prepare('PRAGMA table_info(spools)').all().some(c => c.name === 'sealed'
 // Databases created before each spool kept the weight of its empty spool: none is known yet.
 if (!db.prepare('PRAGMA table_info(spools)').all().some(c => c.name === 'empty_g')) {
   db.exec('ALTER TABLE spools ADD COLUMN empty_g REAL');
+}
+// Databases created before Bambu prints kept the colour of their filament: none is known.
+if (!db.prepare('PRAGMA table_info(bambu_prints)').all().some(c => c.name === 'color_hex')) {
+  db.exec("ALTER TABLE bambu_prints ADD COLUMN color_hex TEXT NOT NULL DEFAULT ''");
 }
 // Databases created before the owner could record prints for themselves: every print had to
 // belong to a person. SQLite cannot relax that in place, so the table is rebuilt, and the
@@ -614,7 +634,7 @@ function createPrint(body, previous = null) {
 // The access key stays in the database: only this summary ever reaches the browser.
 function bambuStatus() {
   const b = getSetting('bambu');
-  return b ? { connected: true, last_sync: b.lastSync || null, error: b.error || null } : { connected: false };
+  return b ? { connected: true, last_sync: b.lastSync || null, error: b.error || null, live: live.status } : { connected: false };
 }
 
 let bambuSyncing = null;
@@ -624,13 +644,14 @@ function syncBambu() {
     const account = getSetting('bambu');
     if (!account) return;
     let error = null;
+    const added = [];
     try {
       const add = db.prepare(
-        'INSERT OR IGNORE INTO bambu_prints (id, title, failed, ended_at, material, planned_g, suggested_g) VALUES (?, ?, ?, ?, ?, ?, ?)'
+        'INSERT OR IGNORE INTO bambu_prints (id, title, failed, ended_at, material, planned_g, suggested_g, color_hex) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
       );
       for (const p of await recentPrints(account.token)) {
         if (p.endedAt < account.since) continue;
-        add.run(p.id, p.title, p.failed ? 1 : 0, p.endedAt, p.material, p.plannedGrams, p.suggestedGrams);
+        if (add.run(p.id, p.title, p.failed ? 1 : 0, p.endedAt, p.material, p.plannedGrams, p.suggestedGrams, p.color).changes) added.push(p);
       }
     } catch (e) {
       if (!(e instanceof BambuError)) throw e;
@@ -640,6 +661,15 @@ function syncBambu() {
     const current = getSetting('bambu');
     if (current?.token !== account.token) return;
     setSetting('bambu', { ...current, error, lastSync: error ? current.lastSync : new Date().toISOString() });
+    if (added.length) notifyNewPrints(added);
+    for (const p of added) {
+      const cover = p.cover && (await fetchCover(p.cover));
+      if (cover) db.prepare('INSERT OR IGNORE INTO bambu_covers (id, type, data) VALUES (?, ?, ?)').run(p.id, cover.type, cover.data);
+    }
+    // a picture is only useful while the print waits: those dealt with for a month are dropped
+    db.prepare(
+      "DELETE FROM bambu_covers WHERE id IN (SELECT id FROM bambu_prints WHERE state != 'pending' AND ended_at < ?)"
+    ).run(new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString());
   })().finally(() => {
     bambuSyncing = null;
   });
@@ -662,6 +692,132 @@ function claimBambuSync() {
 const syncBambuOnSchedule = () => claimBambuSync() && syncBambuQuietly();
 setInterval(syncBambuOnSchedule, BAMBU_SYNC_MS).unref();
 syncBambuOnSchedule();
+
+// ---------- live printer status ----------
+
+// What each printer reported last, merged: printers send only what changed since their last report.
+const printerStates = new Map();
+let live = { stop: () => {}, status: 'off' };
+const BUSY = new Set(['PREPARE', 'SLICING', 'RUNNING', 'PAUSE']);
+const STALE_MS = 30 * 60 * 1000;
+
+// Listens to the account's printers while it is connected; called again whenever that changes.
+async function startLive() {
+  live.stop();
+  printerStates.clear();
+  const account = getSetting('bambu');
+  if (!account) return (live = { stop: () => {}, status: 'off' });
+  const current = (live = { stop: () => {}, status: 'off' });
+  let timer = null;
+  current.stop = () => clearTimeout(timer);
+  try {
+    const [uid, list] = await Promise.all([accountUid(account.token), printers(account.token)]);
+    if (live !== current) return;
+    for (const p of list) printerStates.set(p.id, { name: p.name, updated: 0 });
+    current.stop = watchPrinters({
+      uid,
+      token: account.token,
+      printerIds: list.map(p => p.id),
+      onReport,
+      onStatus: status => (current.status = status),
+    });
+  } catch (e) {
+    if (!(e instanceof BambuError)) console.error(`Bambu live status failed: ${e.message}`);
+    if (live !== current) return;
+    current.status = e.reason === 'unreachable' ? 'off' : 'refused';
+    // tried again later, without insisting on an account Bambu turned down
+    timer = setTimeout(startLive, e.reason === 'unreachable' ? 5 * 60_000 : 30 * 60_000);
+    timer.unref();
+  }
+}
+
+function onReport(id, message) {
+  const p = message.print;
+  const printer = printerStates.get(id);
+  if (!printer || !p || typeof p !== 'object') return;
+  const before = printer.state;
+  if (typeof p.gcode_state === 'string') printer.state = p.gcode_state.slice(0, 20);
+  if (typeof p.subtask_name === 'string') printer.title = p.subtask_name.slice(0, 120);
+  for (const [key, field] of [['mc_percent', 'percent'], ['mc_remaining_time', 'remaining'], ['layer_num', 'layer'], ['total_layer_num', 'layers'], ['print_error', 'error']]) {
+    if (Number.isSafeInteger(p[key]) && p[key] >= 0) printer[field] = p[key];
+  }
+  printer.updated = Date.now();
+  // A print just ended: Bambu files it in the account history a little later, so look a few times.
+  if (BUSY.has(before) && (printer.state === 'FINISH' || printer.state === 'FAILED')) {
+    for (const delay of [15_000, 60_000, 180_000]) setTimeout(syncBambuQuietly, delay).unref();
+  }
+  // The printer stopped itself on a problem: tell the owner once per problem.
+  if (printer.state === 'PAUSE' && printer.error && printer.alerted !== printer.error) {
+    printer.alerted = printer.error;
+    const code = printer.error.toString(16).toUpperCase().padStart(8, '0');
+    notifyOwner({
+      title: `${printer.title || printer.name} : en pause`,
+      body: `L’imprimante signale un problème (code ${code.slice(0, 4)}-${code.slice(4)}).`,
+      url: '/',
+      tag: `bambu-error-${id}`,
+    });
+  }
+  if (printer.state === 'RUNNING') printer.alerted = 0;
+}
+
+// The printers busy printing, for the owner's screen.
+const livePrinters = () =>
+  [...printerStates.values()]
+    .filter(p => BUSY.has(p.state) && Date.now() - p.updated < STALE_MS)
+    .map(p => ({
+      name: p.name,
+      title: p.title || '',
+      state: p.state,
+      percent: p.percent ?? null,
+      remaining_min: p.remaining ?? null,
+      layer: p.layer ?? null,
+      layers: p.layers ?? null,
+      error: p.state === 'PAUSE' && p.error ? p.error.toString(16).toUpperCase().padStart(8, '0') : null,
+    }));
+
+// ---------- notifications ----------
+
+// The server's own key pair for Web Push, made once. Only its public half leaves the server.
+function vapidKeys() {
+  let keys = getSetting('vapid');
+  if (!keys) setSetting('vapid', (keys = newVapidKeys()));
+  return keys;
+}
+
+// Sends a notification to every device of the owner that asked for them, forgetting the
+// devices whose browser dropped the subscription. Never fails: a notification is a bonus.
+async function notifyOwner(message) {
+  let sent = 0;
+  try {
+    const subs = db.prepare('SELECT endpoint, p256dh, auth FROM push_subscriptions').all();
+    const contact = getSetting('push_contact') || 'mailto:owner@localhost';
+    await Promise.all(subs.map(async sub => {
+      const result = await sendPush(sub, message, vapidKeys(), contact);
+      if (result === 'gone') db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(sub.endpoint);
+      if (result === 'sent') sent++;
+      if (result === 'failed') console.error(`Notification not delivered to ${new URL(sub.endpoint).hostname}`);
+    }));
+  } catch (e) {
+    console.error(`Notification failed: ${e.message}`);
+  }
+  return sent;
+}
+
+const fmtGrams = g => g.toLocaleString('fr-FR', { maximumFractionDigits: 1 });
+function notifyNewPrints(prints) {
+  // a pile of prints at once (the first reading, or after an outage) makes one notification
+  if (prints.length > 3) {
+    return notifyOwner({ title: `${prints.length} impressions à attribuer`, body: 'Ouvrez l’onglet Impressions pour les attribuer.', url: '/#bambu', tag: 'bambu-many' });
+  }
+  for (const p of prints) {
+    notifyOwner({
+      title: `${p.title} : ${p.failed ? 'ratée' : 'terminée'}`,
+      body: `${[p.material, `${fmtGrams(p.suggestedGrams)} g`].filter(Boolean).join(' · ')}. Appuyez pour l’attribuer.`,
+      url: `/#bambu=${p.id}`,
+      tag: `bambu-${p.id}`,
+    });
+  }
+}
 
 function bambuHttpError(e) {
   if (!(e instanceof BambuError)) return e;
@@ -712,9 +868,11 @@ route('GET', '/api/state', 'admin', () => ({
   last_backup: lastBackupAt(DATA_DIR),
   bambu: bambuStatus(),
   bambu_prints: db.prepare(
-    `SELECT id, title, failed, ended_at, material, planned_g, suggested_g, state, spool_id, grams
-     FROM bambu_prints WHERE state != 'billed' ORDER BY state = 'pending' DESC, ended_at DESC LIMIT 200`
+    `SELECT id, title, failed, ended_at, material, planned_g, suggested_g, state, spool_id, grams, color_hex,
+            EXISTS (SELECT 1 FROM bambu_covers c WHERE c.id = b.id) AS has_cover
+     FROM bambu_prints b WHERE state != 'billed' ORDER BY state = 'pending' DESC, ended_at DESC LIMIT 200`
   ).all(),
+  bambu_live: livePrinters(),
   last_spool_id: getSetting('last_spool_id'),
   empty_spool_g: getSetting('empty_spool_g') ?? 0,
   spools: db.prepare('SELECT * FROM spools ORDER BY archived, sealed, brand COLLATE NOCASE, material, variant, color_name').all(),
@@ -808,11 +966,47 @@ route('POST', '/api/bambu/login', 'admin', async ({ body }) => {
   // Only prints that end from now on are picked up: the older history is left alone.
   setSetting('bambu', { token, expiresAt, since: getSetting('bambu')?.since || new Date().toISOString() });
   await syncBambu();
+  startLive();
   return { ok: true };
 });
 route('DELETE', '/api/bambu', 'admin', () => {
   db.prepare("DELETE FROM settings WHERE key = 'bambu'").run();
+  startLive();
   return { ok: true };
+});
+// What the printers are doing now, and how many prints wait: the owner's screen asks every few seconds.
+route('GET', '/api/bambu/live', 'admin', () => ({
+  live: livePrinters(),
+  pending: db.prepare("SELECT COUNT(*) AS n FROM bambu_prints WHERE state = 'pending'").get().n,
+}));
+route('GET', '/api/bambu/prints/:id/cover', 'admin', ({ params, res }) => {
+  const cover = db.prepare('SELECT type, data FROM bambu_covers WHERE id = ?').get(params.id);
+  if (!cover) throw new HttpError(404, 'Introuvable');
+  // the picture of a print never changes
+  res.writeHead(200, { 'Content-Type': cover.type, 'Cache-Control': 'private, max-age=2592000, immutable' });
+  res.end(cover.data);
+});
+
+// Notifications reach the owner's devices only: a guest page has no way to ask for them.
+route('GET', '/api/push/key', 'admin', () => ({ key: vapidPublicKey(vapidKeys()) }));
+route('POST', '/api/push/subscriptions', 'admin', ({ req, body }) => {
+  const sub = readSubscription(body);
+  if (!sub) throw bad('Cet appareil ne peut pas recevoir de notifications');
+  if (db.prepare('SELECT COUNT(*) AS n FROM push_subscriptions').get().n >= 20) throw bad('Trop d’appareils : désactivez-en un d’abord');
+  db.prepare('INSERT OR REPLACE INTO push_subscriptions (endpoint, p256dh, auth) VALUES (?, ?, ?)').run(sub.endpoint, sub.p256dh, sub.auth);
+  // Push services want a way to reach whoever sends: the address of this site.
+  const origin = /^https:\/\/[\w.-]+(:\d+)?$/.exec(req.headers.origin || '')?.[0];
+  if (origin) setSetting('push_contact', origin);
+  return { ok: true };
+});
+route('DELETE', '/api/push/subscriptions', 'admin', ({ body }) => {
+  db.prepare('DELETE FROM push_subscriptions WHERE endpoint = ?').run(String(body.endpoint || ''));
+  return { ok: true };
+});
+route('POST', '/api/push/test', 'admin', async () => {
+  const sent = await notifyOwner({ title: 'Notifications activées', body: 'Vous serez prévenu à la fin de chaque impression.', url: '/', tag: 'test' });
+  if (!sent) throw new HttpError(502, 'La notification n’a pas pu être envoyée');
+  return { sent };
 });
 route('POST', '/api/bambu/sync', 'admin', async () => {
   await syncBambu();
@@ -903,8 +1097,8 @@ const STATIC = new Map(
   ])
 );
 // The Lucide icons the interface uses (see `icon` in public/app.js), gathered at startup from the
-// lucide-static package into one small sprite: the browser loads 17 icons, not the whole set.
-const ICONS = ['plus', 'scan-barcode', 'settings', 'log-out', 'sun', 'moon', 'sun-moon', 'trash-2', 'refresh-cw', 'link', 'euro', 'x', 'unlink', 'disc-3', 'box', 'users', 'heart'];
+// lucide-static package into one small sprite: the browser loads 18 icons, not the whole set.
+const ICONS = ['plus', 'scan-barcode', 'settings', 'log-out', 'sun', 'moon', 'sun-moon', 'trash-2', 'refresh-cw', 'link', 'euro', 'x', 'unlink', 'disc-3', 'box', 'users', 'heart', 'bell'];
 const LUCIDE = path.join(__dirname, 'node_modules', 'lucide-static', 'icons');
 const sprite = ICONS.map(name => {
   // keeps the shapes only: the page sets the stroke, so every icon draws the same
@@ -989,7 +1183,10 @@ async function handle(req, res) {
       if (r.role === 'admin' && !isAdmin(req)) throw new HttpError(401, 'Non connecté');
       if (r.role === 'guest' && !(ctx.person = guestOf(req))) throw new HttpError(401, 'Lien d’invitation invalide');
       if (req.method !== 'GET') ctx.body = await readBody(req);
-      return send(res, 200, 'application/json', JSON.stringify(await r.fn(ctx)));
+      const result = await r.fn(ctx);
+      // a route that answered by itself (a picture) has nothing more to send
+      if (res.headersSent) return;
+      return send(res, 200, 'application/json', JSON.stringify(result));
     }
     throw new HttpError(404, 'Introuvable');
   }
@@ -1018,3 +1215,4 @@ http
     });
   })
   .listen(PORT, () => console.log(`3D Print Dashboard listening on port ${PORT}`));
+startLive();
