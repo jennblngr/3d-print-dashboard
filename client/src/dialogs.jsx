@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { t } from './i18n.js';
-import { api, copySources, eur, isMine, localDay, showDate, spoolName, suggestSpool, toCents, today } from './lib.js';
+import { api, copySources, eur, fmtGrams, groupPrints, isMine, localDay, showDate, spoolName, suggestSpool, toCents, today } from './lib.js';
 import { getState, page, useStore } from './store.js';
 import { closeDialog, DialogForm, Field, icons, openDialog, remove, run, toast } from './ui.jsx';
 import { DateInput } from './DateInput.jsx';
 import { Select } from './Select.jsx';
-import { PrintCard } from './cards.jsx';
+import { PrintGroupCard } from './cards.jsx';
 
 // ---------- spools ----------
 
@@ -17,37 +17,56 @@ export const spoolDialog = (spool, preset = {}) => openDialog(<SpoolDialog spool
 
 function SpoolDialog({ spool, preset }) {
   const s = { brand: '', material: 'PLA', color_name: '', color_hex: '#888888', weight_g: 1000, notes: '', ...preset, ...spool };
-  const price = s.price_cents != null ? (s.price_cents / 100).toFixed(2) : '';
+  // what the head of the window shows, as it is being typed
+  const [v, setV] = useState(() => ({
+    brand: s.brand, material: s.material, variant: s.variant ?? '', color_name: s.color_name, color_hex: s.color_hex,
+    price: s.price_cents != null ? (s.price_cents / 100).toFixed(2) : '', weight_g: String(s.weight_g),
+  }));
+  const bind = name => ({ name, value: v[name], onChange: ev => setV(now => ({ ...now, [name]: ev.target.value })) });
+  const priceCents = toCents(v.price);
+  const weight = parseFloat(v.weight_g);
   const save = async fd => {
     const data = Object.fromEntries(fd);
     data.price_cents = toCents(data.price);
     data.archived = fd.has('archived');
     await api(s.id ? 'PUT' : 'POST', s.id ? `/api/spools/${s.id}` : '/api/spools', data);
   };
+  const del = s.id && <button type="button" className="danger" onClick={run(() => remove(`/api/spools/${s.id}`))}>{t('delete')}</button>;
   return (
-    <DialogForm title={s.id ? t('editSpool') : t('newSpool')} onSubmit={save}>
-      <Field name="brand" label={t('brand')} defaultValue={s.brand} required maxLength={80} />
-      <div className="two">
-        <Field name="material" label={t('material')} defaultValue={s.material} list="materials" maxLength={40} />
-        <Field name="color_hex" label={t('color')} defaultValue={s.color_hex} type="color" />
+    <DialogForm title={s.id ? t('editSpool') : t('newSpool')} onSubmit={save} aside={del}>
+      <div className="card spool-head" style={{ '--c': v.color_hex }}>
+        <span className="swatch" aria-hidden="true" />
+        <span className="grow">
+          <strong>{spoolName(v) || t('newSpool')}</strong>
+          {weight > 0 && <small>{t('spoolOf', { grams: fmtGrams(weight) })}</small>}
+        </span>
+        {priceCents > 0 && weight > 0 && <span className="per-kg"><strong className="amount">{eur((priceCents / weight) * 1000)}</strong><small>/kg</small></span>}
       </div>
-      <Field name="variant" label={t('variant')} defaultValue={s.variant ?? ''} list="variants" maxLength={40} placeholder={t('variantNormal')} />
-      <datalist id="variants">{VARIANTS.map(v => <option key={v} value={v} />)}</datalist>
-      <datalist id="materials">{MATERIALS.map(m => <option key={m} value={m} />)}</datalist>
-      <Field name="color_name" label={t('colorName')} defaultValue={s.color_name} maxLength={60} />
+      <Field label={t('brand')} {...bind('brand')} required maxLength={80} />
       <div className="two">
-        <Field name="price" label={t('price')} defaultValue={price} required inputMode="decimal" />
-        <Field name="weight_g" label={t('weight')} defaultValue={s.weight_g} required type="number" min="1" step="any" />
+        <Field label={t('material')} {...bind('material')} list="materials" maxLength={40} />
+        <Field label={t('variant')} {...bind('variant')} list="variants" maxLength={40} placeholder={t('variantNormal')} />
       </div>
-      <Field name="barcode" label={t('barcode')} defaultValue={s.barcode ?? ''} maxLength={500} />
-      <Field name="code" label={t('code')} defaultValue={s.code ?? ''} maxLength={500} />
-      <label>{t('notes')}<textarea name="notes" maxLength={1000} rows={2} defaultValue={s.notes} /></label>
-      {s.id && <>
-        <label className="check"><input type="checkbox" name="archived" defaultChecked={!!s.archived} />{t('archived')}</label>
-        <div className="delete-zone">
-          <button type="button" className="danger" onClick={run(() => remove(`/api/spools/${s.id}`))}>{icons.trash}{t('delete')}</button>
+      <datalist id="variants">{VARIANTS.map(x => <option key={x} value={x} />)}</datalist>
+      <datalist id="materials">{MATERIALS.map(x => <option key={x} value={x} />)}</datalist>
+      <div>
+        <p className="label">{t('color')}</p>
+        <div className="color-row">
+          <input type="color" aria-label={t('color')} {...bind('color_hex')} />
+          <input aria-label={t('colorName')} placeholder={t('colorName')} {...bind('color_name')} maxLength={60} />
         </div>
-      </>}
+      </div>
+      <div className="two">
+        <Field label={t('price')} unit="€" {...bind('price')} required inputMode="decimal" />
+        <Field label={t('weight')} unit="g" {...bind('weight_g')} required type="number" min="1" step="any" />
+      </div>
+      <details open={!s.id && !!(s.barcode || s.code)}>
+        <summary>{t('spoolMore')}</summary>
+        <Field name="barcode" label={t('barcode')} defaultValue={s.barcode ?? ''} maxLength={500} />
+        <Field name="code" label={t('code')} defaultValue={s.code ?? ''} maxLength={500} />
+        <label>{t('notes')}<textarea name="notes" maxLength={1000} rows={2} defaultValue={s.notes} /></label>
+      </details>
+      {s.id && <label className="check"><input type="checkbox" name="archived" defaultChecked={!!s.archived} />{t('archived')}</label>}
     </DialogForm>
   );
 }
@@ -217,6 +236,10 @@ function PrintForm({ pre, edit, copy, onCopy }) {
       : spools.length ? [newLine(p.spool_id, p.grams || '')] : []
   );
   const [adjust, setAdjust] = useState(e?.adjust_cents ? (e.adjust_cents / 100).toFixed(2) : '');
+  // billed or gifted, per person: a new part is billed unless the owner gifts it; an edited
+  // part still to decide stays so until a choice is made
+  const [billing, setBilling] = useState(() => ({ ...e?.billing }));
+  const billingOf = id => billing[id] ?? 'billed';
 
   const toggle = value => setPicked(now => {
     const next = new Set(now);
@@ -231,7 +254,8 @@ function PrintForm({ pre, edit, copy, onCopy }) {
   const billed = !picked.size || [...picked].some(v => v);
   const adjustCents = billed ? toCents(adjust) : 0;
   let cents = adjustCents;
-  let part = Math.round(adjustCents / parts);
+  const adjustPart = Math.round(adjustCents / parts);
+  let part = adjustPart;
   for (const l of lines) {
     const grams = parseFloat(l.grams) || 0;
     const kept = editedLines.find(x => (x.spool_id == null ? keptValue(x.label) === l.value : String(x.spool_id) === l.value));
@@ -245,6 +269,7 @@ function PrintForm({ pre, edit, copy, onCopy }) {
   async function save(fd) {
     const personIds = [...people.filter(x => picked.has(String(x.id))).map(x => x.id), ...(picked.has('') ? [null] : [])];
     if (!personIds.length) throw new Error(t('pickPerson'));
+    const billingIds = personIds.filter(id => id !== null);
     const [method, url] = e?.id ? ['PUT', `/api/prints/${e.id}`]
       : ['POST', pre.bambu_id ? `/api/bambu/prints/${pre.bambu_id}/bill` : '/api/prints'];
     await api(method, url, {
@@ -254,6 +279,7 @@ function PrintForm({ pre, edit, copy, onCopy }) {
       adjust_cents: toCents(fd.get('adjust')),
       adjust_note: fd.get('adjust_note'),
       wish_id: pre.wish_id,
+      billing: Object.fromEntries(billingIds.map(id => [id, billingOf(id)])),
       lines: lines.map(l => {
         const grams = parseFloat(l.grams);
         return l.value.startsWith('l:') ? { spool_id: null, label: l.value.slice(2), grams } : { spool_id: +l.value, grams };
@@ -265,12 +291,18 @@ function PrintForm({ pre, edit, copy, onCopy }) {
     { value: '', label: t('copyNone') },
     ...sources.map(x => ({ value: String(x.id), label: `${x.title} · ${showDate(x.printed_at)} · ${x.who}` })),
   ];
+  // each person's part, in the order of the list, the owner's own last; it carries no adjustment
+  const shares = [
+    ...people.filter(x => picked.has(String(x.id))).map(x => ({ id: x.id, name: x.name, cents: part, state: billingOf(x.id) })),
+    ...(picked.has('') ? [{ id: null, name: t('me'), cents: part - adjustPart, state: 'me' }] : []),
+  ];
+  const due = shares.reduce((sum, x) => sum + (x.state === 'billed' ? x.cents : 0), 0);
   return (
     <DialogForm title={t(e?.id ? 'editPrint' : 'newPrint')} onSubmit={save}>
       {sources.length > 0 && (
         <label>{t('copyFrom')}<Select options={sourceOptions} value={copy ?? ''} onChange={v => onCopy(+v || null)} /></label>
       )}
-      <fieldset>
+      <fieldset className="people">
         <legend>{t('forWhom')}</legend>
         {people.map(x => (
           <label key={x.id} className="check">
@@ -279,39 +311,82 @@ function PrintForm({ pre, edit, copy, onCopy }) {
         ))}
         <label className="check"><input type="checkbox" name="person" value="" checked={picked.has('')} onChange={() => toggle('')} />{t('me')}</label>
         {failed && <p className="hint">{t('failedOwnerOnly')}</p>}
+        {billed && shares.length > 0 && (
+          <div className="shared">
+            <div className="split" aria-hidden="true">{shares.map(x => <i key={x.id ?? 'me'} className={SHARE_CLASS[x.state]} />)}</div>
+            <ul className="legend">
+              {shares.map(x => (
+                <li key={x.id ?? 'me'} className={SHARE_CLASS[x.state]}>
+                  <span className="sw" aria-hidden="true" />
+                  <span className="who">{x.name}</span>
+                  {x.id === null
+                    ? <small className="tag">{t('notBilledTag')}</small>
+                    : <Segmented label={x.name} value={x.state} onChange={v => setBilling(now => ({ ...now, [x.id]: v }))}
+                        options={[{ value: 'billed', label: t('billIt') }, { value: 'gifted', label: t('giftIt') }]} />}
+                  <span className="amt">{eur(x.cents)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </fieldset>
-      <Field name="title" label={t('title')} defaultValue={p.title || ''} required maxLength={120} />
-      <label>{t('date')}<DateInput name="printed_at" defaultValue={p.printed_at || today()} /></label>
-      <fieldset>
-        <legend>{t('filament')}</legend>
+      <div className="pair">
+        <Field name="title" label={t('title')} defaultValue={p.title || ''} required maxLength={120} />
+        <label>{t('date')}<DateInput name="printed_at" defaultValue={p.printed_at || today()} /></label>
+      </div>
+      <div>
+        <p className="label">{t('filament')}</p>
         <div id="lines">
           {lines.map(l => (
-            <LineRow key={l.key} line={l} options={options}
+            <LineRow key={l.key} line={l} options={options} hex={state.spools.find(s => String(s.id) === l.value)?.color_hex}
               onChange={change => setLine(l.key, change)}
-              onRemove={() => setLines(now => now.filter(x => x.key !== l.key))} />
+              onRemove={lines.length > 1 ? () => setLines(now => now.filter(x => x.key !== l.key)) : null} />
           ))}
         </div>
-        {spools.length > 0 && <button type="button" className="ghost" onClick={() => setLines(now => [...now, newLine()])}>{t('addFilament')}</button>}
+        {spools.length > 0 && <div className="bar"><button type="button" className="ghost" onClick={() => setLines(now => [...now, newLine()])}>{t('addFilament')}</button></div>}
         {p.failed && <p className="hint">{t('failedHint')}</p>}
         {p.suggested && <p className="hint">{t('spoolSuggested')}</p>}
-      </fieldset>
-      <div id="billing" hidden={!billed}>
-        <Field name="adjust" label={t('adjust')} value={adjust} onChange={ev => setAdjust(ev.target.value)} inputMode="decimal" />
-        <Field name="adjust_note" label={t('adjustNote')} defaultValue={e?.adjust_note || ''} maxLength={200} />
       </div>
-      <p className="total" id="total"><span>{t('total')}</span><span>{eur(cents)}</span></p>
-      <p className="hint" id="split" hidden={parts < 2}>{t('splitHint', { count: parts, amount: eur(part) })}</p>
+      {billed && (
+        <details id="billing" open={!!e?.adjust_cents}>
+          <summary>{t('adjustment')}</summary>
+          <Field name="adjust" label={t('adjust')} value={adjust} onChange={ev => setAdjust(ev.target.value)} inputMode="decimal" />
+          <Field name="adjust_note" label={t('adjustNote')} defaultValue={e?.adjust_note || ''} maxLength={200} />
+        </details>
+      )}
+      <div className="total" id="total">
+        <p><span>{t('total')}</span><span>{eur(cents)}</span></p>
+        {billed && <p className="due"><span>{t('toBill')}</span><span>{eur(due)}</span></p>}
+      </div>
     </DialogForm>
   );
 }
 
-function LineRow({ line, options, onChange, onRemove }) {
+// How a part shows in the split bar and its legend (same as the print cards).
+const SHARE_CLASS = { pending: 'pending', billed: 'billed', gifted: 'gift', me: 'me' };
+
+// Two or three choices side by side, one of them on: a row of radio buttons drawn as one control.
+function Segmented({ label, value, options, onChange }) {
   return (
-    <div className="line">
+    <span className="seg" role="radiogroup" aria-label={label}>
+      {options.map(o => (
+        <button key={o.value} type="button" role="radio" aria-checked={o.value === value} onClick={() => onChange(o.value)}>{o.label}</button>
+      ))}
+    </span>
+  );
+}
+
+// A filament used: the spool's colour, the spool, its grams, and a way out when there are several.
+function LineRow({ line, options, hex, onChange, onRemove }) {
+  return (
+    <div className={`line${onRemove ? ' removable' : ''}`}>
+      <i className="dot" style={{ '--c': hex || 'transparent' }} aria-hidden="true" />
       <Select name="spool" aria-label={t('filament')} options={options} value={line.value} onChange={value => onChange({ value })} />
-      <input name="grams" type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="g" aria-label={t('grams')}
-        value={line.grams} onChange={ev => onChange({ grams: ev.target.value })} required />
-      <button type="button" className="icon" onClick={onRemove} aria-label={t('delete')}>{icons.close}</button>
+      <span className="unit" data-unit="g">
+        <input name="grams" type="number" inputMode="decimal" min="0.01" step="0.01" aria-label={t('grams')}
+          value={line.grams} onChange={ev => onChange({ grams: ev.target.value })} required />
+      </span>
+      {onRemove && <button type="button" className="icon" onClick={onRemove} aria-label={t('delete')}>{icons.close}</button>}
     </div>
   );
 }
@@ -321,12 +396,15 @@ export const myPrintsDialog = () => openDialog(<MyPrints />);
 
 function MyPrints() {
   const state = useStore(page).data;
+  const groups = groupPrints(state.prints);
   const mine = state.prints.filter(isMine);
   const total = mine.reduce((sum, x) => sum + x.total_cents, 0);
   return (
-    <DialogForm title={t('me')} subtitle={t('myPrints')}>
-      <p className="total"><span>{t('filamentCost')}</span><span>{eur(total)}</span></p>
-      {mine.length ? mine.map(x => <PrintCard key={x.id} state={state} p={x} admin />) : <p className="hint">{t('empty')}</p>}
+    <DialogForm title={t('myPrints')}>
+      <div className="total"><p><span>{t('filamentCost')}</span><span>{eur(total)}</span></p></div>
+      {mine.length
+        ? mine.map(x => <PrintGroupCard key={x.id} state={state} parts={groups.find(g => g.includes(x))} focus={x} />)
+        : <p className="hint">{t('empty')}</p>}
     </DialogForm>
   );
 }

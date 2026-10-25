@@ -27,7 +27,7 @@ const BILLING_CHIP = { pending: 'requested', billed: 'accepted', gifted: 'printe
 function BillingButtons({ p }) {
   if (isMine(p)) return null;
   const set = (billing, label, cls = '') => (
-    <button key={billing} className={cls} onClick={run(async () => {
+    <button key={billing} className={`billing ${cls}`} onClick={run(async () => {
       await api('PUT', `/api/prints/${p.id}/billing`, { billing });
       await refresh();
     })}>{t(label)}</button>
@@ -58,7 +58,7 @@ export function PrintCard({ state, p, admin }) {
         {p.adjust_cents ? <li className="adj"><span>{p.adjust_note || t('adjustment')}</span><span>{eur(p.adjust_cents)}</span></li> : null}
       </ul>
       {admin && (
-        <div className="bar end">
+        <div className="bar">
           <BillingButtons p={p} />
           <button onClick={() => editPrint(p)}>{t('edit')}</button>
           <button className="danger" onClick={del}>{t('delete')}</button>
@@ -68,47 +68,67 @@ export function PrintCard({ state, p, admin }) {
   );
 }
 
-// A shared print in one card: its filament summed over every part, then one row per person
-// with their share and the choice to bill or gift it. A print that is not shared keeps its card.
-export function PrintGroupCard({ state, parts }) {
+// How a part shows in the split bar and its legend.
+const SHARE_CLASS = { pending: 'pending', billed: 'billed', gifted: 'gift' };
+const shareClass = p => (isMine(p) ? 'me' : SHARE_CLASS[p.billing]);
+
+// A shared print in one card: a bar split in equal parts, one legend row per person with their
+// share and the choice to bill or gift it, what is billed in total, then the filament summed over
+// every part, folded. A print that is not shared keeps its card.
+// Given a `focus` part (the owner's own, in "My prints"), the card is told from that part: its
+// amount out of the whole, it comes first, its filament shows unfolded, and nothing is billed here.
+export function PrintGroupCard({ state, parts, focus }) {
   if (parts.length === 1) return <PrintCard state={state} p={parts[0]} admin />;
   const [first] = parts;
+  if (focus) parts = [focus, ...parts.filter(p => p !== focus)];
+  const total = parts.reduce((sum, p) => sum + p.total_cents, 0);
   const lines = new Map();
-  for (const l of parts.flatMap(p => p.lines)) {
+  for (const l of (focus ? focus.lines : parts.flatMap(p => p.lines))) {
     const key = `${l.label}|${l.color_hex}`;
     const kept = lines.get(key) || { ...l, grams: 0, cost_cents: 0 };
     kept.grams += l.grams;
     kept.cost_cents += l.cost_cents;
     lines.set(key, kept);
   }
-  const adjust = parts.reduce((sum, p) => sum + p.adjust_cents, 0);
+  const adjust = focus ? focus.adjust_cents : parts.reduce((sum, p) => sum + p.adjust_cents, 0);
+  const billed = parts.reduce((sum, p) => sum + (!isMine(p) && p.billing === 'billed' ? p.total_cents : 0), 0);
   const del = run(() => remove(`/api/prints/${first.id}`, 'confirmDeleteShared'));
   return (
-    <article className="card col print">
+    <article className="card col print shared">
       <div className="row">
         {first.cover_id ? <Cover id={first.cover_id} /> : null}
         <div className="grow">
           <strong>{first.title}</strong>
-          <small>{showDate(first.printed_at)} · {t('sharedCount', { count: parts.length })}</small>
+          <small>{showDate(first.printed_at)}{focus ? printSharing(focus) : ` · ${t('sharedCount', { count: parts.length })}`}</small>
         </div>
-        <strong className="amount">{eur(parts.reduce((sum, p) => sum + p.total_cents, 0))}</strong>
+        {focus
+          ? <span><strong className="amount">{eur(focus.total_cents)}</strong><small className="of">{t('outOf', { amount: eur(total) })}</small></span>
+          : <strong className="amount">{eur(total)}</strong>}
       </div>
-      <ul className="lines">
-        {[...lines.values()].map((l, i) => (
-          <li key={i}><span><Dot hex={lineColor(state, l)} />{l.label} · {fmtGrams(l.grams)} g</span><span>{eur(l.cost_cents)}</span></li>
-        ))}
-        {adjust ? <li className="adj"><span>{first.adjust_note || t('adjustment')}</span><span>{eur(adjust)}</span></li> : null}
-      </ul>
-      <ul className="lines parts">
+      <div className="split" aria-hidden="true">
+        {parts.map(p => <i key={p.id} className={shareClass(p)} />)}
+      </div>
+      <ul className="legend">
         {parts.map(p => (
-          <li key={p.id}>
-            <span>{printOwner(p)}{!isMine(p) && <span className={`chip ${BILLING_CHIP[p.billing]}`}>{t('billing_' + p.billing)}</span>}</span>
-            <span>{eur(p.total_cents)}</span>
-            {!isMine(p) && <div className="bar"><BillingButtons p={p} /></div>}
+          <li key={p.id} className={shareClass(p)}>
+            <span className="sw" aria-hidden="true" />
+            <span className="who">{isMine(p) ? t('me') : p.person_name}<small>{isMine(p) ? t('notBilledTag') : t('billing_' + p.billing)}</small></span>
+            <span className="amt">{eur(p.total_cents)}</span>
+            <span className="act">{!focus && <BillingButtons p={p} />}</span>
           </li>
         ))}
       </ul>
-      <div className="bar end">
+      {!focus && <div className="total"><p><span>{t('toBill')}</span><span>{eur(billed)}</span></p></div>}
+      <details open={!!focus}>
+        <summary>{t('filamentShort')}</summary>
+        <ul className="lines">
+          {[...lines.values()].map((l, i) => (
+            <li key={i}><span><Dot hex={lineColor(state, l)} />{l.label} · {fmtGrams(l.grams)} g</span><span>{eur(l.cost_cents)}</span></li>
+          ))}
+          {adjust ? <li className="adj"><span>{first.adjust_note || t('adjustment')}</span><span>{eur(adjust)}</span></li> : null}
+        </ul>
+      </details>
+      <div className="foot">
         <button onClick={() => editPrint(first)}>{t('edit')}</button>
         <button className="danger" onClick={del}>{t('delete')}</button>
       </div>
@@ -135,7 +155,6 @@ export function WishCard({ w, admin }) {
   } else if (w.status === 'requested') {
     buttons.push(<button key="del" className="danger" onClick={run(() => remove(`/api/my/wishes/${w.id}`))}>{t('delete')}</button>);
   }
-  const deciding = admin && (w.status === 'requested' || w.status === 'accepted');
   return (
     <article className="card col wish">
       <div className="row">
@@ -143,7 +162,7 @@ export function WishCard({ w, admin }) {
         <span className={`chip ${w.status}`}>{t(w.status)}</span>
       </div>
       {w.note && <p className="note">{w.note}</p>}
-      {buttons.length > 0 && <div className={`bar ${deciding ? 'choices' : 'end'}`}>{buttons}</div>}
+      {buttons.length > 0 && <div className="bar">{buttons}</div>}
     </article>
   );
 }
@@ -196,9 +215,9 @@ export function BambuCard({ b }) {
         </div>
         {b.failed ? <span className="chip declined">{t('failedPrint')}</span> : null}
       </div>
-      <div className="bar choices">
-        <button className="primary" onClick={() => assignBambu(b)}>{t('bill')}</button>
+      <div className="bar">
         <button className="ghost" onClick={ignore}>{t('ignore')}</button>
+        <button className="primary" onClick={() => assignBambu(b)}>{t('bill')}</button>
       </div>
     </article>
   );

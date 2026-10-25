@@ -38,8 +38,9 @@ export const Empty = ({ kind, small = false }) => (
   </div>
 );
 
-export const Field = ({ label, ...input }) => (
-  <label>{label}<input {...input} /></label>
+// `unit` is written inside the field, on the right (€, g...).
+export const Field = ({ label, unit, ...input }) => (
+  <label>{label}{unit ? <span className="unit" data-unit={unit}><input {...input} /></span> : <input {...input} />}</label>
 );
 
 // ---------- toast ----------
@@ -135,7 +136,8 @@ function DialogHost() {
 }
 
 // onSubmit may return a function to run once the window is closed and data reloaded.
-export function DialogForm({ title, subtitle, onSubmit, submitLabel = t('save'), children }) {
+// `aside` is a button set apart on the left of Cancel and Save (deleting, typically).
+export function DialogForm({ title, subtitle, onSubmit, submitLabel = t('save'), aside, children }) {
   const [error, setError] = useState('');
   async function submit(e) {
     e.preventDefault();
@@ -155,6 +157,7 @@ export function DialogForm({ title, subtitle, onSubmit, submitLabel = t('save'),
       {children}
       <p className="err" hidden={!error}>{error}</p>
       <menu>
+        {aside}
         <button type="button" onClick={closeDialog}>{t(onSubmit ? 'cancel' : 'close')}</button>
         {onSubmit && <button className="primary">{submitLabel}</button>}
       </menu>

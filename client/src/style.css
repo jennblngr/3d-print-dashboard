@@ -1,4 +1,4 @@
-/* "Terminal" look: minimal, monospaced labels, one accent colour. Light and dark follow the phone setting.
+/* "Terminal" look: minimal, all in one monospaced font, one accent colour. Light and dark follow the phone setting.
    The page is styled through .app (the page's root, see App.jsx); dialogs and the toast live outside it.
    One structure for every size: the four tabs are four panels (.panel), only one of them open (.open).
      - phone (< 880 px): only the open panel shows, tabs at the bottom of the screen;
@@ -6,22 +6,6 @@
      - computer (≥ 1100 px): panels side by side, the closed ones folded into a strip with their name.
    The layout follows the width of .app (container queries). */
 
-@font-face {
-  font-family: 'Geist';
-  font-style: normal;
-  font-weight: 400 700;
-  font-display: swap;
-  src: url('/fonts/geist-latin-ext.woff2') format('woff2');
-  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
-}
-@font-face {
-  font-family: 'Geist';
-  font-style: normal;
-  font-weight: 400 700;
-  font-display: swap;
-  src: url('/fonts/geist-latin.woff2') format('woff2');
-  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
-}
 @font-face {
   font-family: 'Geist Mono';
   font-style: normal;
@@ -63,7 +47,6 @@
   --scrim: rgb(10 10 12 / 0.45);
   --shadow: rgb(0 0 0 / 0.14);
   --r: 10px;
-  --sans: 'Geist', ui-sans-serif, system-ui, sans-serif;
   --mono: 'Geist Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 /* dark: from the device setting, unless light was picked in the settings, or picked there */
@@ -89,7 +72,7 @@ body { margin: 0; background: var(--bg); }
 html { -webkit-tap-highlight-color: transparent; }
 
 /* ---------- 2. shell (phone first) ---------- */
-.app { container-type: inline-size; min-height: 100dvh; background: var(--bg); color: var(--text); font: 13px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
+.app { container-type: inline-size; min-height: 100dvh; background: var(--bg); color: var(--text); font: 13px/1.5 var(--mono); -webkit-font-smoothing: antialiased; }
 :is(.app, dialog) *, :is(.app, dialog) *::before, :is(.app, dialog) *::after { box-sizing: border-box; }
 .app .shell { display: flex; flex-direction: column; min-height: inherit; }
 .app .page { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -99,7 +82,7 @@ html { -webkit-tap-highlight-color: transparent; }
 .app .logo { flex: none; width: 10px; height: 10px; border-radius: 2px; background: var(--accent); }
 .app .sync { display: none; min-width: 0; margin: 0 12px 0 0; overflow: hidden; font: 11.5px/1.3 var(--mono); color: var(--muted); text-overflow: ellipsis; white-space: nowrap; }
 .app header { padding: 16px 16px 0; }
-.app h1 { margin: 24px 0 16px; font: 600 30px/1.1 var(--sans); letter-spacing: -0.02em; }
+.app h1 { margin: 24px 0 16px; font: 600 30px/1.1 var(--mono); letter-spacing: -0.02em; }
 .app :is(h2, h3) { display: flex; align-items: center; gap: 8px; margin: 32px 0 12px; font: 500 12px/1 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); }
 .app :is(h2, h3)::before { content: ""; flex: none; width: 3px; height: 14px; background: var(--accent); }
 .app main { padding: 0 16px 24px; }
@@ -114,16 +97,15 @@ html { -webkit-tap-highlight-color: transparent; }
 :is(.app, dialog) button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 :is(.app, dialog) button.primary { background: var(--ink); border-color: var(--ink); color: var(--on-ink); font-weight: 600; }
 :is(.app, dialog) button.ghost { background: transparent; }
-:is(.app, dialog) button.danger { background: transparent; border-color: transparent; color: var(--red); }
-:is(.app, dialog) button.link { background: none; border-color: transparent; padding: 0 4px; color: var(--muted); }
+:is(.app, dialog) button.danger { background: transparent; border-color: color-mix(in oklab, var(--red) 45%, var(--line-strong)); color: var(--red); }
+:is(.app, dialog) button.link, :is(.app, dialog) button.link.danger { background: none; border-color: transparent; padding: 0 4px; color: var(--muted); }
 :is(.app, dialog) button.link.danger { color: var(--red); }
 :is(.app, dialog) button.icon { width: 44px; padding: 0; }
-:is(.app, dialog) .bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
-:is(.app, dialog) .bar > .primary:first-child { flex: 1 1 auto; }
-:is(.app, dialog) .bar.end { justify-content: flex-end; }
-:is(.app, dialog) .choices button { flex: 1 1 auto; }
-:is(.app, dialog) .choices .primary { flex-basis: 100%; order: -1; }
-:is(.app, dialog) .choices .danger { flex: 0 0 auto; margin-left: auto; }
+/* inside a card, buttons are compact */
+:is(.app, dialog) .card button:not(.link, .icon) { min-height: 36px; padding: 0 12px; font-size: 11px; }
+/* a row of buttons sits on the right; outside a card, a lone main action fills the phone's width */
+:is(.app, dialog) .bar { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin: 12px 0; }
+:is(.app, dialog) :not(.card) > .bar > .primary:first-child { flex: 1 1 auto; }
 
 :is(.app, dialog) .row { display: flex; align-items: flex-start; gap: 12px; }
 :is(.app, dialog) .grow { flex: 1; min-width: 0; }
@@ -137,12 +119,12 @@ html { -webkit-tap-highlight-color: transparent; }
 .app .panel.closed { display: none; }
 .app .panel .strip { display: none; }
 .app .panel-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 16px; }
-.app .panel-head h2 { flex: 1 0 100%; display: block; margin: 24px 0 8px; font: 600 30px/1.1 var(--sans); letter-spacing: -0.02em; text-transform: none; color: var(--text); }
+.app .panel-head h2 { flex: 1 0 100%; display: block; margin: 24px 0 8px; font: 600 30px/1.1 var(--mono); letter-spacing: -0.02em; text-transform: none; color: var(--text); }
 .app .panel-head h2::before { display: none; }
 .app .panel-head .badge { display: none; }
 .app .panel-head > button.primary { flex: 1 1 auto; }
 /* the first thing in a panel sits right under its head */
-.app .panel-body > :first-child, .app .panel .cols > * > :first-child { margin-top: 0; }
+.app .panel-body > :first-child { margin-top: 0; }
 
 /* ---------- 5. cards and their content ---------- */
 :is(.app, dialog) .card { display: flex; align-items: center; justify-content: flex-start; gap: 12px; width: 100%; min-height: 0; margin: 12px 0; padding: 16px; text-align: left; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); color: inherit; font: inherit; letter-spacing: normal; text-transform: none; }
@@ -151,7 +133,7 @@ dialog .card { background: var(--panel-2); }
 :is(.app, dialog) .card.col { display: block; }
 :is(.app, dialog) .card strong { overflow-wrap: anywhere; }
 :is(.app, dialog) .card.faded { opacity: 0.45; }
-:is(.app, dialog) .card.col .row .grow > strong, .app .me .grow > strong { display: block; font: 600 13px/1.3 var(--sans); }
+:is(.app, dialog) .card.col .row .grow > strong, .app .me .grow > strong { display: block; font: 600 13px/1.3 var(--mono); }
 :is(.app, dialog) .card.col .row .grow > small { margin-top: 4px; }
 /* inside a card: 8px under the title for its state, 12px between the other blocks */
 :is(.app, dialog) .card > .chip { margin-top: 8px; }
@@ -162,15 +144,15 @@ dialog .card { background: var(--panel-2); }
 :is(.app, dialog) .spool { align-items: flex-start; }
 :is(.app, dialog) .swatch { flex: none; width: 40px; height: 40px; border-radius: 6px; background: var(--c); box-shadow: inset 0 0 0 1px var(--edge); }
 :is(.app, dialog) .maker { font: 500 11px/1.3 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
-:is(.app, dialog) .spool strong { display: block; margin-top: 4px; font: 600 13px/1.3 var(--sans); }
+:is(.app, dialog) .spool strong { display: block; margin-top: 4px; font: 600 13px/1.3 var(--mono); }
 :is(.app, dialog) .meter { display: block; height: 14px; margin: 8px 0; background: repeating-linear-gradient(90deg, var(--seg-off) 0 3px, transparent 3px 6px); }
 :is(.app, dialog) .meter i { display: block; height: 100%; background: repeating-linear-gradient(90deg, var(--fill, var(--text)) 0 3px, transparent 3px 6px); }
 :is(.app, dialog) .qty { font-weight: 600; color: var(--text); }
 :is(.app, dialog) .spool .chip { align-self: flex-start; }
 
 /* the picture of the model, when Bambu has one */
-.app .thumb { flex: none; width: 64px; height: 64px; border-radius: 6px; object-fit: cover; background: var(--panel-2); box-shadow: inset 0 0 0 1px var(--edge); }
-.app .lines .thumb.sm { width: 32px; height: 32px; margin-right: 8px; border-radius: 4px; vertical-align: middle; }
+:is(.app, dialog) .thumb { flex: none; width: 64px; height: 64px; border-radius: 6px; object-fit: cover; background: var(--panel-2); box-shadow: inset 0 0 0 1px var(--edge); }
+:is(.app, dialog) .lines .thumb.sm { width: 32px; height: 32px; margin-right: 8px; border-radius: 4px; vertical-align: middle; }
 /* printing now */
 .app .card.live { --fill: var(--accent); }
 .app .card.live .meter { margin-top: 12px; }
@@ -186,10 +168,33 @@ dialog .card { background: var(--panel-2); }
 :is(.app, dialog) .lines li > span:last-child { display: inline-flex; align-items: center; gap: 4px; font: 500 13px/1.3 var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
 :is(.app, dialog) :is(.lines, .todo) .dot { display: inline-block; width: 10px; height: 10px; margin-right: 8px; border-radius: 2px; background: var(--c); box-shadow: inset 0 0 0 1px var(--edge); vertical-align: -1px; }
 :is(.app, dialog) .lines li.adj { color: var(--muted); }
-:is(.app, dialog) .lines.parts li { flex-wrap: wrap; }
-:is(.app, dialog) .lines.parts li > span:first-child { display: inline-flex; align-items: center; gap: 8px; }
-:is(.app, dialog) .lines.parts li > span:nth-child(2) { font: 500 13px/1.3 var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
-:is(.app, dialog) .lines.parts .bar { flex-basis: 100%; margin: 0; }
+/* a shared print: a bar split in equal parts, then one legend row per person.
+   A part is .pending (to decide), .billed, .gift or .me (the owner's own, never billed) */
+:is(.app, dialog) .card.shared .row .grow > strong { font-size: 15px; }
+:is(.app, dialog) .shared .split { display: flex; gap: 4px; height: 10px; margin: 16px 0 4px; }
+:is(.app, dialog) .shared .split i { flex: 1; border-radius: 2px; }
+:is(.app, dialog) .shared .sw { width: 10px; height: 10px; border-radius: 2px; }
+:is(.app, dialog) .shared :is(.split .billed, .billed > .sw) { background: var(--blue); }
+:is(.app, dialog) .shared :is(.split .gift, .gift > .sw) { background: repeating-linear-gradient(-45deg, var(--green) 0 2px, transparent 2px 5px); box-shadow: inset 0 0 0 1px var(--green); }
+:is(.app, dialog) .shared :is(.split .pending, .pending > .sw) { box-shadow: inset 0 0 0 1px var(--accent); }
+:is(.app, dialog) .shared :is(.split .me, .me > .sw) { background: var(--seg-off); box-shadow: inset 0 0 0 1px var(--line-strong); }
+:is(.app, dialog) .shared .legend { list-style: none; margin: 8px 0 0; padding: 0; }
+:is(.app, dialog) .shared .legend li { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto 92px; align-items: center; gap: 4px 12px; min-height: 48px; }
+:is(.app, dialog) .shared .who { font: 500 14px/1.3 var(--mono); }
+:is(.app, dialog) .shared .who small { display: block; margin-top: 2px; font: 500 11px/1.3 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+:is(.app, dialog) .shared .billed .who small { color: var(--blue); }
+:is(.app, dialog) .shared .gift .who small { color: var(--green); }
+:is(.app, dialog) .shared .pending .who small { color: var(--accent); }
+:is(.app, dialog) .shared .amt { font: 500 13px/1.3 var(--mono); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+:is(.app, dialog) .shared :is(.gift, .me) .amt { color: var(--muted); }
+:is(.app, dialog) .shared .gift .amt { text-decoration: line-through; }
+:is(.app, dialog) .shared .act { display: flex; justify-content: flex-end; gap: 8px; }
+/* "Bill" and "Gift" swap in place: the button keeps one width */
+:is(.app, dialog) .card button.billing { min-width: 92px; }
+/* a part still to decide offers both choices, on their own line under the name */
+:is(.app, dialog) .shared .pending .act { grid-column: 2 / -1; justify-content: flex-start; padding-bottom: 8px; }
+:is(.app, dialog) .shared details > .lines { margin-top: 0; }
+:is(.app, dialog) .shared .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 :is(.app, dialog) .lines li.adj .dot { display: none; }
 .app .lines button.icon { width: 44px; min-height: 44px; margin: -10px -12px -10px 0; border-color: transparent; background: none; }
 
@@ -204,13 +209,13 @@ dialog .card { background: var(--panel-2); }
 
 /* collapsible parts */
 .app details { margin-top: 24px; }
-.app .card details { margin-top: 8px; }
-.app summary { display: flex; align-items: center; gap: 8px; min-height: 44px; font: 500 12px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); cursor: pointer; list-style: none; }
-.app summary::-webkit-details-marker { display: none; }
-.app summary::before { content: "[+]"; color: var(--text); }
-.app details[open] summary::before { content: "[−]"; }
-.app details .lines li > span:first-child { font-size: 13px; }
-.app details button.link { color: var(--blue); text-align: right; }
+:is(.app, dialog) .card details { margin-top: 8px; }
+:is(.app, dialog) summary { display: flex; align-items: center; gap: 8px; min-height: 44px; font: 500 12px/1 var(--mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); cursor: pointer; list-style: none; }
+:is(.app, dialog) summary::-webkit-details-marker { display: none; }
+:is(.app, dialog) summary::before { content: "[+]"; color: var(--text); }
+:is(.app, dialog) details[open] summary::before { content: "[−]"; }
+:is(.app, dialog) details .lines li > span:first-child { font-size: 13px; }
+:is(.app, dialog) details button.link { color: var(--blue); text-align: right; }
 
 /* printer */
 .app .bambu .note { display: flex; gap: 8px; align-items: flex-start; color: var(--text); font: 13px/1.5 var(--mono); }
@@ -219,7 +224,6 @@ dialog .card { background: var(--panel-2); }
 
 /* people */
 .app .person .row { align-items: center; }
-.app .person .bar button { flex: 1 1 auto; }
 
 /* panels with marked corners: a guest's balance, sign-in */
 .app :is(.balance, .login form) { border: 1px solid var(--line); border-radius: var(--r); background:
@@ -253,8 +257,8 @@ dialog .card { background: var(--panel-2); }
 .app .login .empty p { font: 500 14px/1.5 var(--mono); }
 
 /* ---------- 6. forms ---------- */
-:is(.app, dialog) label { display: block; margin: 0; font: 500 11px/1.3 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-:is(.app, dialog) input, :is(.app, dialog) select, :is(.app, dialog) textarea { display: block; width: 100%; min-height: 44px; margin-top: 8px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel-2); color: var(--text); font: 400 13px/1.3 var(--sans); letter-spacing: normal; text-transform: none; }
+:is(.app, dialog) label, :is(.app, dialog) p.label { display: block; margin: 0; font: 500 11px/1.3 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+:is(.app, dialog) input, :is(.app, dialog) select, :is(.app, dialog) textarea { display: block; width: 100%; min-height: 44px; margin-top: 8px; padding: 0 12px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel-2); color: var(--text); font: 400 13px/1.3 var(--mono); letter-spacing: normal; text-transform: none; }
 :is(.app, dialog) textarea { padding: 10px 12px; min-height: 84px; resize: vertical; }
 /* an iPhone zooms into a field written under 16px when it is touched: fields stay at 16px there */
 @supports (-webkit-touch-callout: none) { :is(.app, dialog) :is(input, select, textarea) { font-size: 16px; } }
@@ -265,16 +269,43 @@ dialog .card { background: var(--panel-2); }
 :is(.app, dialog) input[type='color']::-webkit-color-swatch-wrapper { padding: 0; }
 :is(.app, dialog) input[type='color']::-webkit-color-swatch { border: 0; border-radius: 5px; }
 :is(.app, dialog) input[type='color']::-moz-color-swatch { border: 0; border-radius: 5px; }
-:is(.app, dialog) label.check { display: flex; align-items: center; gap: 12px; min-height: 40px; font: 400 13px/1.4 var(--sans); letter-spacing: normal; text-transform: none; color: var(--text); }
+:is(.app, dialog) label.check { display: flex; align-items: center; gap: 12px; min-height: 40px; font: 400 13px/1.4 var(--mono); letter-spacing: normal; text-transform: none; color: var(--text); }
 :is(.app, dialog) input[type='checkbox'] { flex: none; width: 20px; height: 20px; min-height: 20px; margin: 0; padding: 0; accent-color: var(--accent); }
 :is(.app, dialog) .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 :is(.app, dialog) fieldset { margin: 0; padding: 8px 16px 16px; border: 1px solid var(--line); border-radius: var(--r); }
 :is(.app, dialog) legend { padding: 0 8px; font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
-:is(.app, dialog) .line { display: grid; grid-template-columns: minmax(0, 1fr) 80px 44px; gap: 8px; align-items: center; margin-bottom: 8px; }
+:is(.app, dialog) .pair { display: grid; gap: 16px; }
+/* a filament used: its colour, the spool, the grams, and a way out when there are several */
+:is(.app, dialog) .line { display: grid; grid-template-columns: 12px minmax(0, 1fr) 112px; gap: 12px; align-items: center; margin-top: 8px; }
+:is(.app, dialog) .line.removable { grid-template-columns: 12px minmax(0, 1fr) 112px 44px; }
 :is(.app, dialog) .line select, :is(.app, dialog) .line input { margin: 0; }
+:is(.app, dialog) .line .dot { width: 12px; height: 12px; border-radius: 2px; background: var(--c); box-shadow: inset 0 0 0 1px var(--edge); }
+:is(.app, dialog) .line button.icon { border-color: transparent; background: none; }
+/* a field with its unit written inside, on the right */
+:is(.app, dialog) .unit { position: relative; display: block; }
+:is(.app, dialog) .unit input { padding-right: 32px; }
+:is(.app, dialog) .unit::after { content: attr(data-unit); position: absolute; top: 50%; right: 12px; transform: translateY(-50%); font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); pointer-events: none; }
+/* who a print is for: one tile per person, then how it splits and who pays */
+:is(.app, dialog) .people label.check { min-height: 52px; margin-top: 8px; padding: 0 16px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel-2); cursor: pointer; }
+:is(.app, dialog) .people .shared .split { margin-top: 16px; }
+:is(.app, dialog) .people .shared .legend li { grid-template-columns: 10px minmax(0, 1fr) auto 64px; min-height: 56px; }
+:is(.app, dialog) .people .shared .tag { font: 500 11px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+:is(.app, dialog) .people .shared .amt { color: var(--text); text-decoration: none; }
+/* a segmented control: choices side by side in one frame, the chosen one lit */
+:is(.app, dialog) .seg { display: inline-flex; gap: 4px; padding: 4px; border: 1px solid var(--line-strong); border-radius: 8px; }
+:is(.app, dialog) .seg button { min-height: 36px; padding: 0 12px; border-color: transparent; background: none; font-size: 11px; color: var(--muted); }
+:is(.app, dialog) .seg button[aria-checked='true'] { border-color: var(--line); background: var(--bg); color: var(--text); }
+:is(.app, dialog) .billed .seg button[aria-checked='true'] { color: var(--blue); }
+:is(.app, dialog) .gift .seg button[aria-checked='true'] { color: var(--green); }
 :is(.app, dialog) fieldset > .hint { margin-top: 8px; }
 :is(.app, dialog) #lines > .hint { margin: 0 0 8px; }
-:is(.app, dialog) .total { display: flex; justify-content: space-between; align-items: baseline; margin: 0; padding: 12px 16px; border: 1px solid var(--line-strong); border-radius: 8px; font: 600 20px/1 var(--mono); font-variant-numeric: tabular-nums; }
+/* a framed sum: one row per amount, the last one (.due) standing out */
+:is(.app, dialog) .total { border: 1px solid var(--line-strong); border-radius: 8px; }
+:is(.app, dialog) .total > p { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin: 0; padding: 12px 16px; font: 500 12px/1 var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+:is(.app, dialog) .total > p + p { border-top: 1px dashed var(--line-strong); }
+:is(.app, dialog) .total > p > :last-child { font: 600 16px/1 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: 0; text-transform: none; color: var(--text); }
+:is(.app, dialog) .total > p.due > :last-child { font-size: 20px; }
+:is(.app, dialog) .card > .total { margin-top: 12px; }
 :is(.app, dialog) .scanview { position: relative; margin: 0; }
 :is(.app, dialog) video { display: block; width: 100%; aspect-ratio: 4 / 3; max-height: 50vh; border-radius: 8px; background: #000; object-fit: cover; }
 :is(.app, dialog) .aim { position: absolute; inset: 24% 14%; pointer-events: none; background:
@@ -284,24 +315,36 @@ dialog .card { background: var(--panel-2); }
   linear-gradient(#fff, #fff) right bottom / 18px 2px no-repeat, linear-gradient(#fff, #fff) right bottom / 2px 18px no-repeat; }
 
 /* one rhythm in a form: 16px between fields, 8px under a field for its hint, 24px before the buttons */
-:is(dialog form, .login form, #billing) > * + * { margin-top: 16px; }
-:is(dialog form, .login form, #billing) > * + .hint { margin-top: 8px; }
+:is(dialog form, .login form, dialog form details) > * + * { margin-top: 16px; }
+:is(dialog form, .login form, dialog form details) > * + .hint { margin-top: 8px; }
 :is(dialog form > menu, .login form > button) { margin-top: 24px; }
 
 /* ---------- 7. dialogs: a sheet rising from the bottom on a phone, centred on a large screen ---------- */
-dialog { box-sizing: border-box; width: 100%; max-width: 100%; max-height: calc(100dvh - 24px); margin: auto 0 0; padding: 24px 16px calc(16px + env(safe-area-inset-bottom)); border: 1px solid var(--line); border-bottom: 0; border-radius: 14px 14px 0 0; background: var(--panel); color: var(--text); font: 13px/1.5 var(--sans); box-shadow: 0 -12px 40px var(--shadow); -webkit-font-smoothing: antialiased; }
+dialog { box-sizing: border-box; width: 100%; max-width: 100%; max-height: calc(100dvh - 24px); margin: auto 0 0; padding: 24px 16px calc(16px + env(safe-area-inset-bottom)); border: 1px solid var(--line); border-bottom: 0; border-radius: 14px 14px 0 0; background: var(--panel); color: var(--text); font: 13px/1.5 var(--mono); box-shadow: 0 -12px 40px var(--shadow); -webkit-font-smoothing: antialiased; }
 dialog::backdrop { background: var(--scrim); }
-dialog h2 { margin: 0; font: 600 20px/1.2 var(--sans); letter-spacing: -0.01em; }
-dialog h2 small { margin-top: 4px; font: 500 12px/1.3 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
-dialog menu { display: flex; gap: 8px; margin: 0; padding: 0; }
-dialog menu button { flex: 1; }
-dialog menu .primary { flex: 2; }
+dialog h2 { margin: 0; font: 600 20px/1.2 var(--mono); letter-spacing: -0.01em; }
+/* a window's title reads like a section heading; the confirmation keeps its question in full */
+dialog:not(.confirm) h2 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font: 500 12px/1.3 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--text); }
+dialog:not(.confirm) h2::before { content: ""; flex: none; width: 3px; height: 14px; background: var(--accent); }
+dialog:not(.confirm) h2 small { display: inline; font: inherit; color: var(--muted); }
+:is(.app, dialog) .of { margin-top: 4px; text-align: right; white-space: nowrap; }
+/* the window's buttons sit on the right; one set apart (deleting) stays on the left */
+dialog menu { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin: 0; padding: 0; }
+dialog menu > .danger:first-child { margin-right: auto; }
+/* a spool's window opens on what it stands for: its colour, its name, its price per kilo */
+dialog .spool-head { align-items: flex-start; margin: 16px 0 0; }
+dialog .spool-head .swatch { width: 88px; height: 88px; border-radius: 10px; }
+dialog .spool-head .grow > strong { display: block; font: 600 15px/1.3 var(--mono); }
+dialog .spool-head .grow > small { margin-top: 8px; }
+dialog .spool-head .per-kg { display: flex; align-items: baseline; gap: 4px; white-space: nowrap; }
+dialog .spool-head .per-kg small { display: inline; }
+dialog .color-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 12px; }
+dialog .color-row input { margin-top: 8px; }
 dialog .stack { display: grid; gap: 8px; }
-dialog .delete-zone { padding-top: 16px; border-top: 1px dashed var(--line-strong); }
+dialog .delete-zone { display: flex; justify-content: flex-end; padding-top: 16px; border-top: 1px dashed var(--line-strong); }
 @media (min-width: 960px) {
   dialog { width: min(560px, calc(100vw - 48px)); margin: auto; padding: 24px; border-bottom: 1px solid var(--line); border-radius: 12px; box-shadow: 0 20px 60px var(--shadow); }
-  dialog menu { justify-content: flex-end; }
-  dialog menu button, dialog menu .primary { flex: 0 0 auto; }
+  dialog .pair { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 /* ---------- 8. toast: at the top, never over the buttons ---------- */
@@ -336,10 +379,9 @@ dialog .delete-zone { padding-top: 16px; border-top: 1px dashed var(--line-stron
   .app main { padding: 0 32px 32px; }
   .app .panel-head h2 { font-size: 34px; margin-top: 32px; }
   .app .panel-head > button.primary { flex: 0 0 auto; }
-  .app .bar > .primary:first-child { flex: 0 0 auto; }
-  .app .choices button, .app .choices .primary { flex: 0 0 auto; }
-  .app .person .bar button { flex: 0 0 auto; }
-  .app .grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+  .app :not(.card) > .bar > .primary:first-child { flex: 0 0 auto; }
+  /* cards side by side, the same on every tab: three at most per row, fewer when they would get narrower than 280 px */
+  .app .grid { grid-template-columns: repeat(auto-fill, minmax(max(280px, calc((100% - 24px) / 3)), 1fr)); }
   .app.guest .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px; align-items: start; }
   .app .balance { padding: 32px; }
   .app .balance strong { font-size: 72px; }
@@ -366,6 +408,8 @@ dialog .delete-zone { padding-top: 16px; border-top: 1px dashed var(--line-stron
   .app .panel-body { flex: 1; min-height: 0; overflow: auto; padding: 16px; }
   .app .panel-body :is(h2, h3) { margin-top: 24px; }
   .app .panel .cols { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 24px; align-items: start; }
+  /* both columns start level, the printer's live block counting as nothing while it is empty */
+  .app .panel .cols > * > :is(:first-child, #live:empty + *), .app .panel .cols #live > :first-child { margin-top: 0; }
 }
 
 /* ---------- 12. animations ----------
@@ -427,17 +471,16 @@ dialog .delete-zone { padding-top: 16px; border-top: 1px dashed var(--line-stron
 :is(.app, dialog) input:-webkit-autofill { -webkit-text-fill-color: var(--text); caret-color: var(--text); box-shadow: inset 0 0 0 100px var(--panel-2); }
 
 /* numbers and prices: aligned digits, no little arrows */
-:is(.app, dialog) input[type='number'], :is(.app, dialog) input[inputmode='decimal'] { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+:is(.app, dialog) input[type='number'], :is(.app, dialog) input[inputmode='decimal'] { font-variant-numeric: tabular-nums; }
 :is(.app, dialog) input[type='number'] { -moz-appearance: textfield; appearance: textfield; }
 :is(.app, dialog) input[type='number']::-webkit-inner-spin-button, :is(.app, dialog) input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 
-/* date: digits in mono, a quiet calendar icon */
-:is(.app, dialog) input[type='date'] { font-family: var(--mono); }
+/* date: a quiet calendar icon */
 :is(.app, dialog) input[type='date']::-webkit-calendar-picker-indicator { opacity: 0.6; cursor: pointer; }
 :is(.app, dialog) input[type='date']::-webkit-calendar-picker-indicator:hover { opacity: 1; }
 
 /* password: spaced dots */
-:is(.app, dialog) input[type='password'] { font-family: var(--mono); letter-spacing: 0.2em; }
+:is(.app, dialog) input[type='password'] { letter-spacing: 0.2em; }
 
 /* checkbox: a square, an orange tick */
 :is(.app, dialog) input[type='checkbox'] { -webkit-appearance: none; appearance: none; display: inline-grid; place-content: center; border: 1px solid var(--line-strong); border-radius: 4px; background: var(--panel-2); cursor: pointer; }
@@ -449,14 +492,14 @@ dialog .delete-zone { padding-top: 16px; border-top: 1px dashed var(--line-stron
 /* drop-down lists: drawn by Select.jsx over the hidden real <select>, the same in every browser */
 :is(.app, dialog) .pick { position: relative; display: block; }
 :is(.app, dialog) .pick > select { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; pointer-events: none; }
-:is(.app, dialog) button.pick-btn { justify-content: space-between; gap: 8px; width: 100%; margin-top: 8px; padding: 0 12px; border-radius: 8px; background: var(--panel-2); font: 400 13px/1.3 var(--sans); letter-spacing: normal; text-transform: none; text-align: left; }
+:is(.app, dialog) button.pick-btn { justify-content: space-between; gap: 8px; width: 100%; margin-top: 8px; padding: 0 12px; border-radius: 8px; background: var(--panel-2); font: 400 13px/1.3 var(--mono); letter-spacing: normal; text-transform: none; text-align: left; }
 :is(.app, dialog) .pick-btn > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 :is(.app, dialog) .pick-btn::after { content: "▾"; flex: none; color: var(--muted); }
 :is(.app, dialog) .pick-btn[aria-expanded='true'] { outline: 2px solid var(--accent); outline-offset: 0; border-color: transparent; }
 :is(.app, dialog) .line .pick-btn { margin: 0; }
 :is(.app, dialog) .pick-list { position: fixed; inset: auto; box-sizing: border-box; margin: 0; padding: 4px; overflow: auto; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--panel); color: var(--text); letter-spacing: normal; text-transform: none; box-shadow: 0 12px 32px var(--shadow); scrollbar-width: thin; }
 :is(.app, dialog) .pick-list:focus { outline: none; }
-:is(.app, dialog) .pick-opt { display: flex; gap: 8px; padding: 8px 12px; border-radius: 6px; font: 400 13px/1.3 var(--sans); cursor: pointer; }
+:is(.app, dialog) .pick-opt { display: flex; gap: 8px; padding: 8px 12px; border-radius: 6px; font: 400 13px/1.3 var(--mono); cursor: pointer; }
 :is(.app, dialog) .pick-opt::before { content: ""; flex: none; width: 0.6em; }
 :is(.app, dialog) .pick-opt.active { background: var(--panel-2); }
 :is(.app, dialog) .pick-opt[aria-selected='true'] { font-weight: 600; }
@@ -469,7 +512,7 @@ dialog .delete-zone { padding-top: 16px; border-top: 1px dashed var(--line-stron
 :is(.app, dialog) .cal-head button.icon { border-color: transparent; background: none; }
 :is(.app, dialog) .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
 :is(.app, dialog) .cal-grid abbr { padding: 4px 0; font: 500 11px/1.3 var(--mono); text-align: center; text-decoration: none; text-transform: uppercase; color: var(--muted); }
-:is(.app, dialog) .cal-grid [role='gridcell'] { display: flex; align-items: center; justify-content: center; height: 32px; border: 1px solid transparent; border-radius: 6px; font: 400 13px/1 var(--sans); cursor: pointer; }
+:is(.app, dialog) .cal-grid [role='gridcell'] { display: flex; align-items: center; justify-content: center; height: 32px; border: 1px solid transparent; border-radius: 6px; font: 400 13px/1 var(--mono); cursor: pointer; }
 :is(.app, dialog) .cal-grid .out { color: var(--muted); opacity: 0.6; }
 :is(.app, dialog) .cal-grid .today { border-color: var(--line-strong); }
 :is(.app, dialog) .cal-grid :is(.active, [role='gridcell']:hover) { background: var(--panel-2); }
