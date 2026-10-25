@@ -169,7 +169,7 @@ db.exec(`
     grams REAL,
     color_hex TEXT NOT NULL DEFAULT ''
   );
-  -- the picture of a Bambu print's model, shown while it waits to be assigned
+  -- the picture of a Bambu print's model, kept as long as the print
   CREATE TABLE IF NOT EXISTS bambu_covers (
     id INTEGER PRIMARY KEY REFERENCES bambu_prints(id) ON DELETE CASCADE,
     type TEXT NOT NULL,
@@ -638,6 +638,7 @@ function bambuStatus() {
 }
 
 let bambuSyncing = null;
+const coverTried = new Set();
 // Files the prints that ended since the account was connected, to be assigned by the owner.
 function syncBambu() {
   bambuSyncing ??= (async () => {
@@ -645,6 +646,7 @@ function syncBambu() {
     if (!account) return;
     let error = null;
     const added = [];
+    const listed = [];
     try {
       const add = db.prepare(
         'INSERT OR IGNORE INTO bambu_prints (id, title, failed, ended_at, material, planned_g, suggested_g, color_hex) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -652,6 +654,7 @@ function syncBambu() {
       for (const p of await recentPrints(account.token)) {
         if (p.endedAt < account.since) continue;
         if (add.run(p.id, p.title, p.failed ? 1 : 0, p.endedAt, p.material, p.plannedGrams, p.suggestedGrams, p.color).changes) added.push(p);
+        listed.push(p);
       }
     } catch (e) {
       if (!(e instanceof BambuError)) throw e;
@@ -662,14 +665,17 @@ function syncBambu() {
     if (current?.token !== account.token) return;
     setSetting('bambu', { ...current, error, lastSync: error ? current.lastSync : new Date().toISOString() });
     if (added.length) notifyNewPrints(added);
-    for (const p of added) {
-      const cover = p.cover && (await fetchCover(p.cover));
-      if (cover) db.prepare('INSERT OR IGNORE INTO bambu_covers (id, type, data) VALUES (?, ?, ?)').run(p.id, cover.type, cover.data);
+    // Every print Bambu still lists gets its picture, also those filed before pictures were kept.
+    // A print whose picture could not be had is tried once per start, not at every reading.
+    const hasCover = db.prepare('SELECT 1 FROM bambu_covers WHERE id = ?');
+    const known = db.prepare('SELECT 1 FROM bambu_prints WHERE id = ?');
+    for (const p of listed) {
+      if (!p.cover || coverTried.has(p.id) || hasCover.get(p.id)) continue;
+      coverTried.add(p.id);
+      const cover = await fetchCover(p.cover);
+      // the print may have been removed while the picture was downloading
+      if (cover && known.get(p.id)) db.prepare('INSERT OR IGNORE INTO bambu_covers (id, type, data) VALUES (?, ?, ?)').run(p.id, cover.type, cover.data);
     }
-    // a picture is only useful while the print waits: those dealt with for a month are dropped
-    db.prepare(
-      "DELETE FROM bambu_covers WHERE id IN (SELECT id FROM bambu_prints WHERE state != 'pending' AND ended_at < ?)"
-    ).run(new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString());
   })().finally(() => {
     bambuSyncing = null;
   });

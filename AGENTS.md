@@ -206,8 +206,9 @@ d'elles est violée, préviens-moi immédiatement.
   pour l'appareil : Google les transporte sans pouvoir les lire. Se
   déconnecter de l'application coupe les notifications de cet appareil.
 - Chaque impression relevée garde l'image de son modèle, téléchargée une fois
-  chez Bambu et servie par l'application ; elle est effacée 30 jours après
-  l'attribution ou l'abandon de l'impression.
+  chez Bambu et servie par l'application, sans limite de durée. Les images
+  manquantes sont récupérées pour les 50 dernières impressions que Bambu liste
+  encore (y compris celles relevées avant l'ajout des images).
 - Le formulaire d'attribution présélectionne la bobine de même matière et de
   couleur la plus proche (bobine ouverte d'abord) : simple proposition, rien
   n'est compté avant validation.
