@@ -2,11 +2,11 @@
 
 ## Le projet
 - Ce que fait le produit : une petite application web installable sur téléphone
-  pour suivre mon stock de bobines de filament (ajout par scan du code-barres ou
-  du tag RFID) et pour facturer à mes proches les impressions 3D qu'ils me
+  pour enregistrer mes bobines de filament et leur prix (ajout par scan du
+  code-barres ou du tag RFID) et pour facturer à mes proches les impressions 3D qu'ils me
   demandent, au coût du filament utilisé. Ils peuvent aussi me demander des
   impressions via une liste de souhaits.
-- Pour qui : moi seul pour le stock et la gestion ; mon cercle privé (famille,
+- Pour qui : moi seul pour les bobines et la gestion ; mon cercle privé (famille,
   amis) pour la partie partagée, chacun avec son lien d'invitation.
 - Ce que je ne veux jamais casser :
   1. les montants dus par chaque personne ;
