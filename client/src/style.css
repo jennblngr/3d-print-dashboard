@@ -1,5 +1,5 @@
 /* "Terminal" look: minimal, monospaced labels, one accent colour. Light and dark follow the phone setting.
-   The page is styled through .app (set on #app); dialogs and the toast live outside it.
+   The page is styled through .app (the page's root, see App.jsx); dialogs and the toast live outside it.
    One structure for every size: the four tabs are four panels (.panel), only one of them open (.open).
      - phone (< 880 px): only the open panel shows, tabs at the bottom of the screen;
      - tablet (880–1099 px): tabs in a sidebar;
@@ -366,11 +366,11 @@ dialog .delete-zone { padding-top: 16px; border-top: 1px dashed var(--line-stron
 }
 
 /* ---------- 12. animations ----------
-   Short and quiet, played only when switching tabs (.dash.switching, set by app.js): a page
+   Short and quiet, played only when switching tabs (.dash.switching, set by Admin.jsx): a page
    redrawn after a save does not move. Every duration is multiplied by --motion: 0 when the
    device asks for less motion (nothing moves), 1 otherwise.
    - Switching tabs (phone, tablet): a marker slides under the chosen tab (nav.slide, --i =
-     the tab's position, set by app.js), then the panel fades in, its cards one after the other.
+     the tab's position, set by Admin.jsx), then the panel fades in, its cards one after the other.
    - Switching panels (computer): the chosen panel widens while the other folds; its content
      comes in once there is room. */
 .app { --motion: 1; --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1); }
@@ -443,7 +443,7 @@ dialog .delete-zone { padding-top: 16px; border-top: 1px dashed var(--line-stron
 :is(.app, dialog) input[type='checkbox']:checked::after { opacity: 1; }
 :is(.app, dialog) input[type='checkbox']:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-/* drop-down lists: drawn by select.js over the hidden real <select>, the same in every browser */
+/* drop-down lists: drawn by Select.jsx over the hidden real <select>, the same in every browser */
 :is(.app, dialog) .pick { position: relative; display: block; }
 :is(.app, dialog) .pick > select { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; pointer-events: none; }
 :is(.app, dialog) button.pick-btn { justify-content: space-between; gap: 8px; width: 100%; margin-top: 8px; padding: 0 12px; border-radius: 8px; background: var(--panel-2); font: 400 13px/1.3 var(--sans); letter-spacing: normal; text-transform: none; text-align: left; }
@@ -469,7 +469,7 @@ dialog.confirm h2::before { content: "! "; color: var(--red); font-family: var(-
 @media (max-width: 959px) { dialog.confirm { max-width: 100%; } }
 
 /* ---------- 14. windows rise from the bottom of the screen, and slide back down when closed ----------
-   Both ways take the same time, the closing one mirroring the opening one. app.js sets .closing
+   Both ways take the same time, the closing one mirroring the opening one. ui.jsx sets .closing
    and closes the window once the slide is over (Escape, Cancel, Save alike). */
 dialog { --motion: 1; --sheet-from: translateY(100%); --sheet-fade: 1; }
 /* centred on a large screen: it comes up a little way, fading in */

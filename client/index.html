@@ -7,20 +7,16 @@
   <meta name="theme-color" content="#0A0A0B" media="(prefers-color-scheme: dark)">
   <meta name="robots" content="noindex, nofollow">
   <title>3D Print Dashboard</title>
-  <link rel="manifest" href="__MANIFEST__">
+  <link rel="manifest" href="/manifest.webmanifest" vite-ignore>
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="preload" href="/fonts/geist-latin.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/geist-mono-latin.woff2" as="font" type="font/woff2" crossorigin>
   <script src="/theme.js"></script>
-  <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <div id="app" class="app"></div>
-  <dialog id="dlg"></dialog>
-  <dialog id="confirm" class="confirm"></dialog>
-  <div id="toast" role="status" popover="manual"></div>
-  <script type="module" src="/app.js"></script>
+  <div id="root"></div>
+  <script type="module" src="/src/main.jsx"></script>
 </body>
 </html>
