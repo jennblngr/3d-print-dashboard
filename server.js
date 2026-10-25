@@ -424,8 +424,9 @@ function listPrints(guestId) {
       p.shared_with = shared.map(o => o.name);
       p.edit = printSnapshot(p.id).form;
       p.cover_id = cover.get(p.id, p.group_id)?.id ?? null;
+    } else {
+      delete p.group_id;
     }
-    delete p.group_id;
   }
   return prints;
 }

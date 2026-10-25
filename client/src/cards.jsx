@@ -68,6 +68,54 @@ export function PrintCard({ state, p, admin }) {
   );
 }
 
+// A shared print in one card: its filament summed over every part, then one row per person
+// with their share and the choice to bill or gift it. A print that is not shared keeps its card.
+export function PrintGroupCard({ state, parts }) {
+  if (parts.length === 1) return <PrintCard state={state} p={parts[0]} admin />;
+  const [first] = parts;
+  const lines = new Map();
+  for (const l of parts.flatMap(p => p.lines)) {
+    const key = `${l.label}|${l.color_hex}`;
+    const kept = lines.get(key) || { ...l, grams: 0, cost_cents: 0 };
+    kept.grams += l.grams;
+    kept.cost_cents += l.cost_cents;
+    lines.set(key, kept);
+  }
+  const adjust = parts.reduce((sum, p) => sum + p.adjust_cents, 0);
+  const del = run(() => remove(`/api/prints/${first.id}`, 'confirmDeleteShared'));
+  return (
+    <article className="card col print">
+      <div className="row">
+        {first.cover_id ? <Cover id={first.cover_id} /> : null}
+        <div className="grow">
+          <strong>{first.title}</strong>
+          <small>{showDate(first.printed_at)} · {t('sharedCount', { count: parts.length })}</small>
+        </div>
+        <strong className="amount">{eur(parts.reduce((sum, p) => sum + p.total_cents, 0))}</strong>
+      </div>
+      <ul className="lines">
+        {[...lines.values()].map((l, i) => (
+          <li key={i}><span><Dot hex={lineColor(state, l)} />{l.label} · {fmtGrams(l.grams)} g</span><span>{eur(l.cost_cents)}</span></li>
+        ))}
+        {adjust ? <li className="adj"><span>{first.adjust_note || t('adjustment')}</span><span>{eur(adjust)}</span></li> : null}
+      </ul>
+      <ul className="lines parts">
+        {parts.map(p => (
+          <li key={p.id}>
+            <span>{printOwner(p)}{!isMine(p) && <span className={`chip ${BILLING_CHIP[p.billing]}`}>{t('billing_' + p.billing)}</span>}</span>
+            <span>{eur(p.total_cents)}</span>
+            {!isMine(p) && <div className="bar"><BillingButtons p={p} /></div>}
+          </li>
+        ))}
+      </ul>
+      <div className="bar end">
+        <button onClick={() => editPrint(first)}>{t('edit')}</button>
+        <button className="danger" onClick={del}>{t('delete')}</button>
+      </div>
+    </article>
+  );
+}
+
 // ---------- wishes ----------
 
 export function WishCard({ w, admin }) {

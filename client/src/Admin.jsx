@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { t, lang } from './i18n.js';
 import { decodeTigerTag, colorFamily } from './tigertag.js';
-import { api, currentTheme, eur, isMine, setTheme, THEME_KEYS, toDecide } from './lib.js';
+import { api, currentTheme, eur, groupPrints, isMine, setTheme, THEME_KEYS, toDecide } from './lib.js';
 import { getState, refresh, useStore } from './store.js';
 import { ask, Empty, icons, Logo, remove, run, toast } from './ui.jsx';
 import { push, pushOff, pushOn, pushTest, pushUnsubscribe } from './push.js';
-import { BambuCard, BambuRow, Grid, LiveBlock, PaymentRow, PrintCard, SpoolCard, WishCard } from './cards.jsx';
+import { BambuCard, BambuRow, Grid, LiveBlock, PaymentRow, PrintGroupCard, SpoolCard, WishCard } from './cards.jsx';
 import {
   adminWishDialog, assignBambu, bambuConnectDialog, handleTag, myPrintsDialog, newPrint, paymentDialog, personDialog,
   scanDialog, settingsDialog, spoolDialog,
@@ -68,7 +68,7 @@ export function Admin({ state }) {
   }, []);
 
   const counts = {
-    prints: state.bambu_prints.filter(b => b.state === 'pending').length + state.prints.filter(toDecide).length,
+    prints: state.bambu_prints.filter(b => b.state === 'pending').length + groupPrints(state.prints).filter(g => g.some(toDecide)).length,
     wishes: state.wishes.filter(w => w.status === 'requested').length,
   };
   const badge = k => (counts[k] ? <b className="badge">{counts[k]}</b> : null);
@@ -137,9 +137,11 @@ function SpoolsView(state) {
 function PrintsView(state) {
   const pending = state.bambu_prints.filter(b => b.state === 'pending');
   const handled = state.bambu_prints.filter(b => b.state !== 'pending');
-  const undecided = state.prints.filter(toDecide);
-  const decided = state.prints.filter(p => !toDecide(p));
-  const cards = prints => <Grid>{prints.map(p => <PrintCard key={p.id} state={state} p={p} admin />)}</Grid>;
+  // a shared print waits to be decided as long as one of its parts does
+  const groups = groupPrints(state.prints);
+  const undecided = groups.filter(g => g.some(toDecide));
+  const decided = groups.filter(g => !g.some(toDecide));
+  const cards = groups => <Grid>{groups.map(g => <PrintGroupCard key={g[0].id} state={state} parts={g} />)}</Grid>;
   return {
     head: <button className="primary" onClick={newPrint}>{icons.plus}{t('newPrint')}</button>,
     body: (
