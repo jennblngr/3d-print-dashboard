@@ -85,6 +85,8 @@
 }
 [hidden] { display: none !important; }
 body { margin: 0; background: var(--bg); }
+/* no blue flash on what a finger touches (Android): buttons and cards show their own states */
+html { -webkit-tap-highlight-color: transparent; }
 
 /* ---------- 2. shell (phone first) ---------- */
 .app { container-type: inline-size; min-height: 100dvh; background: var(--bg); color: var(--text); font: 13px/1.5 var(--sans); -webkit-font-smoothing: antialiased; }
