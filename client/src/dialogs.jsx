@@ -434,9 +434,11 @@ const BambuCode = ({ email }) => (
 
 // ---------- people, payments ----------
 
-export const personDialog = () => openDialog(
-  <DialogForm title={t('newPerson')} onSubmit={fd => api('POST', '/api/people', { name: fd.get('name') }).then(() => null)}>
-    <Field name="name" label={t('name')} required maxLength={60} />
+// A new person, or `person` renamed: their invite link and everything recorded stay as they are.
+export const personDialog = person => openDialog(
+  <DialogForm title={t(person?.id ? 'renamePerson' : 'newPerson')}
+    onSubmit={fd => api(person?.id ? 'PUT' : 'POST', person?.id ? `/api/people/${person.id}` : '/api/people', { name: fd.get('name') }).then(() => null)}>
+    <Field name="name" label={t('name')} defaultValue={person?.name ?? ''} required maxLength={60} />
   </DialogForm>
 );
 

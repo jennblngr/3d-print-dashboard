@@ -101,6 +101,8 @@ const fr = {
   printCount: 'Impressions : {count}',
   filamentCost: 'Coût en filament',
   newPerson: 'Nouvelle personne',
+  renamePerson: 'Renommer',
+  rename: 'Renommer',
   name: 'Nom',
   owes: 'doit {amount}',
   credit: 'avoir de {amount}',

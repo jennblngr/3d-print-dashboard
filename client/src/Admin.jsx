@@ -225,7 +225,7 @@ function PushBlock() {
 function PeopleView(state) {
   const mine = state.prints.filter(isMine);
   return {
-    head: <button className="primary" onClick={personDialog}>{icons.plus}{t('add')}</button>,
+    head: <button className="primary" onClick={() => personDialog()}>{icons.plus}{t('add')}</button>,
     body: <>
       <button type="button" className="card me" onClick={myPrintsDialog}>
         <span className="grow"><strong>{t('me')}</strong><small>{t('printCount', { count: mine.length })} · {t('notBilledTag')}</small></span>
@@ -278,6 +278,7 @@ function PersonCard({ state, p }) {
         <summary>{t('more')}</summary>
         {pays.length > 0 && <ul className="lines">{pays.map(x => <PaymentRow key={x.id} p={x} admin />)}</ul>}
         <div className="bar">
+          <button onClick={() => personDialog(p)}>{t('rename')}</button>
           <button onClick={newLink}>{t('newLink')}</button>
           <button className="danger" onClick={run(() => remove(`/api/people/${p.id}`, 'confirmDeletePerson'))}>{t('deletePerson')}</button>
         </div>

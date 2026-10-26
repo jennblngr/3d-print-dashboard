@@ -932,6 +932,12 @@ route('DELETE', '/api/spools/:id', 'admin', ({ params }) => {
 route('POST', '/api/people', 'admin', ({ body }) => ({
   id: db.prepare('INSERT INTO people (name, token) VALUES (?, ?)').run(str(body.name, 60, 'Nom'), newToken()).lastInsertRowid,
 }));
+// Renaming touches nothing else: prints, wishes and payments read the name from here.
+route('PUT', '/api/people/:id', 'admin', ({ params, body }) => {
+  mustExist('people', params.id);
+  db.prepare('UPDATE people SET name = ? WHERE id = ?').run(str(body.name, 60, 'Nom'), params.id);
+  return { ok: true };
+});
 route('POST', '/api/people/:id/token', 'admin', ({ params }) => {
   mustExist('people', params.id);
   db.prepare('UPDATE people SET token = ? WHERE id = ?').run(newToken(), params.id);
