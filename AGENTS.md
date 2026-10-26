@@ -246,7 +246,8 @@ d'elles est violée, préviens-moi immédiatement.
   par défaut, ou forcés d'un clic sur l'icône en haut (soleil et lune =
   automatique, soleil = clair, lune = sombre) ; choix propre à chaque
   appareil.
-- Polices Geist et Geist Mono livrées avec l'application ; icônes Lucide (paquet
+- Une seule police, Geist Mono, partout (textes, titres, champs), livrée avec
+  l'application (depuis le 26/10/2026) ; icônes Lucide (paquet
   npm `lucide-static`), servies par l'application elle-même : rien n'est chargé
   depuis un autre site.
 - Le dossier `design/` (planche des écrans, brief) reste sur mon Mac et n'est
