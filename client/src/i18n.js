@@ -133,6 +133,7 @@ const fr = {
   wishUrl: 'Lien vers le modèle (facultatif)',
   wishNote: 'Couleur, taille, détails (facultatif)',
   newWishFor: 'Ajouter un souhait',
+  editWish: 'Modifier le souhait',
   wishFor: 'Pour qui ?',
   wishModel: 'Modèle',
   send: 'Envoyer',

@@ -291,7 +291,7 @@ function WishesView(state) {
   const order = ['requested', 'accepted', 'printed', 'declined'];
   const sorted = [...state.wishes].sort((a, b) => order.indexOf(a.status) - order.indexOf(b.status));
   return {
-    head: state.people.length ? <button className="primary" onClick={adminWishDialog}>{icons.plus}{t('add')}</button> : null,
+    head: state.people.length ? <button className="primary" onClick={() => adminWishDialog()}>{icons.plus}{t('add')}</button> : null,
     body: sorted.length ? <Grid>{sorted.map(w => <WishCard key={w.id} w={w} admin />)}</Grid> : <Empty kind="wishes" />,
   };
 }

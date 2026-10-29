@@ -1066,11 +1066,15 @@ route('DELETE', '/api/payments/:id', 'admin', ({ params }) => {
   return { ok: true };
 });
 
-function addWish(personId, body, status) {
+function wishFields(body) {
   const url = str(body.url, 500);
   if (url && !/^https?:\/\//i.test(url)) throw bad('Le lien doit commencer par http:// ou https://');
+  return [str(body.title, 120, 'Titre'), url, str(body.note, 500)];
+}
+
+function addWish(personId, body, status) {
   return db.prepare('INSERT INTO wishes (person_id, title, url, note, status) VALUES (?, ?, ?, ?, ?)').run(
-    personId, str(body.title, 120, 'Titre'), url, str(body.note, 500), status
+    personId, ...wishFields(body), status
   ).lastInsertRowid;
 }
 
@@ -1079,10 +1083,19 @@ route('POST', '/api/wishes', 'admin', ({ body }) => {
   const person = mustExist('people', int(body.person_id, 1, Number.MAX_SAFE_INTEGER, 'Personne'));
   return { id: addWish(person.id, body, 'accepted') };
 });
+// Either moves a wish to another status, or corrects what it says and who it is for;
+// its status and any print recorded from it stay as they are.
 route('PUT', '/api/wishes/:id', 'admin', ({ params, body }) => {
-  if (!['requested', 'accepted', 'printed', 'declined'].includes(body.status)) throw bad('Statut invalide');
   mustExist('wishes', params.id);
-  db.prepare('UPDATE wishes SET status = ? WHERE id = ?').run(body.status, params.id);
+  if (body.status !== undefined) {
+    if (!['requested', 'accepted', 'printed', 'declined'].includes(body.status)) throw bad('Statut invalide');
+    db.prepare('UPDATE wishes SET status = ? WHERE id = ?').run(body.status, params.id);
+    return { ok: true };
+  }
+  const person = mustExist('people', int(body.person_id, 1, Number.MAX_SAFE_INTEGER, 'Personne'));
+  db.prepare('UPDATE wishes SET person_id = ?, title = ?, url = ?, note = ? WHERE id = ?').run(
+    person.id, ...wishFields(body), params.id
+  );
   return { ok: true };
 });
 route('DELETE', '/api/wishes/:id', 'admin', ({ params }) => {
