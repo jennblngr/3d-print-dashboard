@@ -457,21 +457,22 @@ export function paymentDialog(person) {
 
 // ---------- wishes ----------
 
-const WishFields = ({ title }) => (
+const WishFields = ({ title, w = {} }) => (
   <>
-    <Field name="title" label={title} required maxLength={120} />
-    <Field name="url" label={t('wishUrl')} type="url" maxLength={500} placeholder="https://" />
-    <label>{t('wishNote')}<textarea name="note" maxLength={500} rows={3} /></label>
+    <Field name="title" label={title} defaultValue={w.title ?? ''} required maxLength={120} />
+    <Field name="url" label={t('wishUrl')} type="url" defaultValue={w.url ?? ''} maxLength={500} placeholder="https://" />
+    <label>{t('wishNote')}<textarea name="note" maxLength={500} rows={3} defaultValue={w.note ?? ''} /></label>
   </>
 );
 
-// The owner writes down a wish for one of the people.
-export const adminWishDialog = () => openDialog(
-  <DialogForm title={t('newWishFor')} onSubmit={async fd => {
-    await api('POST', '/api/wishes', Object.fromEntries(fd));
+// The owner writes down a wish for one of the people, or corrects one already there.
+export const adminWishDialog = w => openDialog(
+  <DialogForm title={t(w?.id ? 'editWish' : 'newWishFor')} onSubmit={async fd => {
+    await api(w?.id ? 'PUT' : 'POST', w?.id ? `/api/wishes/${w.id}` : '/api/wishes', Object.fromEntries(fd));
   }}>
-    <label>{t('wishFor')}<Select name="person_id" required options={getState().people.map(x => ({ value: String(x.id), label: x.name }))} /></label>
-    <WishFields title={t('wishModel')} />
+    <label>{t('wishFor')}<Select name="person_id" required defaultValue={w?.person_id}
+      options={getState().people.map(x => ({ value: String(x.id), label: x.name }))} /></label>
+    <WishFields title={t('wishModel')} w={w} />
   </DialogForm>
 );
 

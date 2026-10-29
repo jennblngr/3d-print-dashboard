@@ -2,7 +2,7 @@ import { t } from './i18n.js';
 import { api, eur, fmtGrams, isLink, isMine, localDay, showDate, spoolName } from './lib.js';
 import { refresh } from './store.js';
 import { icons, remove, run } from './ui.jsx';
-import { assignBambu, editPrint, recordWish, spoolDialog } from './dialogs.jsx';
+import { adminWishDialog, assignBambu, editPrint, recordWish, spoolDialog } from './dialogs.jsx';
 
 export const Grid = ({ children }) => <div className="grid">{children}</div>;
 const Dot = ({ hex }) => (hex ? <i className="dot" style={{ '--c': hex }} /> : null);
@@ -151,6 +151,7 @@ export function WishCard({ w, admin }) {
   if (admin) {
     if (w.status === 'requested') buttons.push(set('accepted', 'accept'), set('declined', 'decline'));
     if (w.status === 'requested' || w.status === 'accepted') buttons.push(set('printed', 'markPrinted', 'primary'));
+    buttons.push(<button key="edit" onClick={() => adminWishDialog(w)}>{t('edit')}</button>);
     buttons.push(<button key="del" className="danger" onClick={run(() => remove(`/api/wishes/${w.id}`))}>{t('delete')}</button>);
   } else if (w.status === 'requested') {
     buttons.push(<button key="del" className="danger" onClick={run(() => remove(`/api/my/wishes/${w.id}`))}>{t('delete')}</button>);
