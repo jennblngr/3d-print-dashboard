@@ -149,7 +149,7 @@ function PrintsView(state) {
           <div id="live"><LiveBlock busy={state.bambu_live} /></div>
           {pending.length > 0 && <><h3>{t('toAssign')}</h3><Grid>{pending.map(b => <BambuCard key={b.id} b={b} />)}</Grid></>}
           {undecided.length > 0 && <><h3>{t('toDecide')}</h3>{cards(undecided)}</>}
-          {(pending.length > 0 || undecided.length > 0) && <h3>{t('prints')}</h3>}
+          {(state.bambu_live?.length > 0 || pending.length > 0 || undecided.length > 0) && <h3>{t('prints')}</h3>}
           {decided.length ? cards(decided) : <Empty kind="prints" />}
           {handled.length > 0 && (
             <details>
