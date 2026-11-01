@@ -214,6 +214,10 @@ d'elles est violée, préviens-moi immédiatement.
   chez Bambu et servie par l'application, sans limite de durée. Les images
   manquantes sont récupérées pour les 50 dernières impressions que Bambu liste
   encore (y compris celles relevées avant l'ajout des images).
+- Un souhait marqué « Imprimé » s'associe de préférence à une impression
+  existante (déjà enregistrée pour la personne, ou à attribuer), sinon à une
+  nouvelle (décidé le 01/11/2026). Associer ne change aucun montant ; une
+  impression ne répond qu'à un seul souhait.
 - Le formulaire d'attribution présélectionne la bobine de même matière et de
   couleur la plus proche : simple proposition, rien n'est compté avant
   validation.

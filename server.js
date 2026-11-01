@@ -399,7 +399,7 @@ function loginFailed(key) {
 // where it was in the list.
 function listPrints(guestId) {
   const prints = db.prepare(
-    `SELECT p.id, p.person_id, pe.name AS person_name, p.title, p.printed_at, p.adjust_cents, p.adjust_note, p.group_id, p.billing
+    `SELECT p.id, p.person_id, pe.name AS person_name, p.title, p.printed_at, p.adjust_cents, p.adjust_note, p.group_id, p.billing, p.wish_id
      FROM prints p LEFT JOIN people pe ON pe.id = p.person_id ${guestId ? "WHERE p.person_id = ? AND p.billing != 'pending'" : ''}
      ORDER BY p.printed_at DESC, p.created_at DESC, p.id DESC`
   ).all(...(guestId ? [guestId] : []));
@@ -428,6 +428,7 @@ function listPrints(guestId) {
       p.cover_id = cover.get(p.id, p.group_id)?.id ?? null;
     } else {
       delete p.group_id;
+      delete p.wish_id;
     }
   }
   return prints;
@@ -1098,6 +1099,19 @@ route('PUT', '/api/wishes/:id', 'admin', ({ params, body }) => {
   );
   return { ok: true };
 });
+// Ties a wish to a print already recorded: the part of it that belongs to the wish's person.
+// Nothing about the print changes, so no amount moves; the wish is then printed.
+route('POST', '/api/wishes/:id/print', 'admin', ({ params, body }) =>
+  tx(() => {
+    const wish = mustExist('wishes', params.id);
+    const print = mustExist('prints', int(body.print_id, 1, Number.MAX_SAFE_INTEGER, 'Impression'));
+    if (print.person_id !== wish.person_id) throw bad("Cette impression n'est pas pour cette personne");
+    if (print.wish_id !== null && print.wish_id !== wish.id) throw bad('Cette impression répond déjà à un autre souhait');
+    db.prepare('UPDATE prints SET wish_id = ? WHERE id = ?').run(wish.id, print.id);
+    db.prepare("UPDATE wishes SET status = 'printed' WHERE id = ?").run(wish.id);
+    return { ok: true };
+  })
+);
 route('DELETE', '/api/wishes/:id', 'admin', ({ params }) => {
   db.prepare('DELETE FROM wishes WHERE id = ?').run(params.id);
   return { ok: true };

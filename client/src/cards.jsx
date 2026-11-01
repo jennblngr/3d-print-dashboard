@@ -2,7 +2,7 @@ import { t } from './i18n.js';
 import { api, eur, fmtGrams, isLink, isMine, localDay, showDate, spoolName } from './lib.js';
 import { refresh } from './store.js';
 import { icons, remove, run } from './ui.jsx';
-import { adminWishDialog, assignBambu, editPrint, recordWish, spoolDialog } from './dialogs.jsx';
+import { adminWishDialog, assignBambu, editPrint, spoolDialog, wishPrinted } from './dialogs.jsx';
 
 export const Grid = ({ children }) => <div className="grid">{children}</div>;
 const Dot = ({ hex }) => (hex ? <i className="dot" style={{ '--c': hex }} /> : null);
@@ -142,7 +142,7 @@ export function WishCard({ w, admin }) {
   const title = isLink(w.url) ? <a href={w.url} target="_blank" rel="noopener noreferrer">{w.title}</a> : w.title;
   const set = (status, label, cls = '') => (
     <button key={status} className={cls} onClick={run(async () => {
-      if (status === 'printed') return recordWish(w);
+      if (status === 'printed') return wishPrinted(w);
       await api('PUT', `/api/wishes/${w.id}`, { status });
       await refresh();
     })}>{t(label)}</button>
