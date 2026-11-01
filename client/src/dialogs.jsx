@@ -165,14 +165,42 @@ const keptValue = label => `l:${label}`;
 export const newPrint = () => openDialog(<PrintDialog />);
 export const editPrint = p => openDialog(<PrintDialog edit={{ ...p.edit, id: p.id }} />);
 export const recordWish = w => openDialog(<PrintDialog pre={{ person_id: w.person_id, title: w.title, wish_id: w.id }} />);
-export function assignBambu(b) {
+// `wish` is the wish this print answers: the form then starts with its person.
+export function assignBambu(b, wish = null) {
   // a failed print is billed to nobody: it can only be the owner's own
   const failed = !!b.failed;
   const spool = suggestSpool(getState(), b);
   openDialog(<PrintDialog pre={{
     title: b.title, grams: b.suggested_g, printed_at: localDay(b.ended_at), spool_id: spool.id, suggested: spool.matched,
-    bambu_id: b.id, failed, person_id: failed ? null : undefined,
+    bambu_id: b.id, failed, person_id: failed ? null : wish?.person_id, wish_id: failed ? undefined : wish?.id,
   }} />);
+}
+
+// A wish is mostly printed before it is marked so: it is then tied to a print already there,
+// one recorded for its person or one from the printer still to assign, or else to a new print.
+const NEW = 'new';
+export function wishPrinted(w) {
+  const state = getState();
+  const waiting = state.bambu_prints.filter(b => b.state === 'pending' && !b.failed)
+    .sort((a, b) => b.ended_at.localeCompare(a.ended_at));
+  const recorded = state.prints.filter(p => p.person_id === w.person_id && (p.wish_id == null || p.wish_id === w.id));
+  if (!waiting.length && !recorded.length) return recordWish(w);
+  const options = [
+    ...(waiting.length ? [{ group: t('toAssign'), options: waiting.map(b => ({ value: `b:${b.id}`, label: `${b.title} · ${showDate(localDay(b.ended_at))}` })) }] : []),
+    ...(recorded.length ? [{ group: t('recordedFor', { name: w.person_name }), options: recorded.map(p => ({ value: `p:${p.id}`, label: `${p.title} · ${showDate(p.printed_at)}` })) }] : []),
+    { value: NEW, label: t('wishNewPrint') },
+  ];
+  openDialog(
+    <DialogForm title={t('wishPrinted')} subtitle={w.title} submitLabel={t('wishLink')} onSubmit={async fd => {
+      const [kind, id] = fd.get('print').split(':');
+      if (kind === NEW) return () => recordWish(w);
+      if (kind === 'b') return () => assignBambu(waiting.find(b => b.id === +id), w);
+      await api('POST', `/api/wishes/${w.id}/print`, { print_id: +id });
+    }}>
+      <p className="hint">{t('wishLinkHint')}</p>
+      <label>{t('wishWhichPrint')}<Select name="print" options={options} /></label>
+    </DialogForm>
+  );
 }
 
 // `edit` is the print being edited (its `edit` form, with `id`): the same form, prefilled.
